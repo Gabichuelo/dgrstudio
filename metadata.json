@@ -1,0 +1,7 @@
+{
+  "name": "StreamPulse DJ Studio",
+  "description": "Una plataforma profesional para la reserva de estudios de streaming para DJs, con gestión de packs, equipamiento y panel de administración.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
