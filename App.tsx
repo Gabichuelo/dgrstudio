@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ViewType, Booking, Pack, HomeContent } from './types';
 import { INITIAL_PACKS, INITIAL_HOME_CONTENT } from './constants';
 import Navbar from './components/Navbar';
@@ -15,15 +15,22 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'idle'>('idle');
 
+  // Usamos una ref para el apiUrl para que syncWithServer sea estable y no entre en bucle
+  const apiUrlRef = useRef(homeContent.apiUrl);
+  useEffect(() => {
+    apiUrlRef.current = homeContent.apiUrl;
+  }, [homeContent.apiUrl]);
+
   const syncWithServer = useCallback(async (action: 'fetch' | 'push', data?: any) => {
-    if (!homeContent.apiUrl) {
+    const currentApiUrl = apiUrlRef.current;
+    if (!currentApiUrl) {
       setServerStatus('idle');
       return null;
     }
     
     setIsSyncing(true);
     try {
-      const url = `${homeContent.apiUrl.replace(/\/$/, '')}/api/sync`;
+      const url = `${currentApiUrl.replace(/\/$/, '')}/api/sync`;
       const response = await fetch(url, {
         method: action === 'push' ? 'POST' : 'GET',
         headers: { 'Content-Type': 'application/json' },
@@ -35,7 +42,13 @@ const App: React.FC = () => {
         if (action === 'fetch' && result) {
           if (result.packs?.length > 0) setPacks(result.packs);
           if (result.bookings) setBookings(result.bookings);
-          if (result.homeContent?.studioName) setHomeContent(result.homeContent);
+          // Solo actualizamos homeContent si el servidor devuelve algo válido y evitamos sobreescribir el apiUrl local si el del servidor está vacío
+          if (result.homeContent?.studioName) {
+            setHomeContent(prev => ({
+              ...result.homeContent,
+              apiUrl: prev.apiUrl // Mantenemos nuestra URL actual para evitar loops si el servidor tiene una distinta o vacía
+            }));
+          }
         }
         setServerStatus('online');
         return result;
@@ -49,23 +62,32 @@ const App: React.FC = () => {
       setIsSyncing(false);
     }
     return null;
-  }, [homeContent.apiUrl]);
+  }, []); // Dependencias vacías porque usamos Refs para los valores cambiantes
 
+  // Efecto de carga inicial (solo una vez al montar el componente)
   useEffect(() => {
-    const load = async () => {
+    const loadInitialData = async () => {
       const savedPacks = localStorage.getItem('dj_packs');
       const savedBookings = localStorage.getItem('dj_bookings');
       const savedHome = localStorage.getItem('dj_home');
       
       if (savedPacks) setPacks(JSON.parse(savedPacks));
       if (savedBookings) setBookings(JSON.parse(savedBookings));
-      if (savedHome) setHomeContent(JSON.parse(savedHome));
+      if (savedHome) {
+        const parsedHome = JSON.parse(savedHome);
+        setHomeContent(parsedHome);
+        // Actualizamos la ref inmediatamente para el primer fetch
+        apiUrlRef.current = parsedHome.apiUrl;
+      }
 
+      // Intentamos sincronizar con el servidor tras cargar lo local
       await syncWithServer('fetch');
     };
-    load();
+    
+    loadInitialData();
   }, [syncWithServer]);
 
+  // Guardar en LocalStorage cada vez que algo cambie localmente
   useEffect(() => {
     localStorage.setItem('dj_packs', JSON.stringify(packs));
     localStorage.setItem('dj_bookings', JSON.stringify(bookings));
