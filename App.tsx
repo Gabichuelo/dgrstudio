@@ -13,10 +13,13 @@ const App: React.FC = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [homeContent, setHomeContent] = useState<HomeContent>(INITIAL_HOME_CONTENT);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'idle'>('idle');
 
-  // Sincronización con el servidor remoto
   const syncWithServer = useCallback(async (action: 'fetch' | 'push', data?: any) => {
-    if (!homeContent.apiUrl) return null;
+    if (!homeContent.apiUrl) {
+      setServerStatus('idle');
+      return null;
+    }
     
     setIsSyncing(true);
     try {
@@ -30,26 +33,29 @@ const App: React.FC = () => {
       if (response.ok) {
         const result = await response.json();
         if (action === 'fetch' && result) {
-          if (result.packs) setPacks(result.packs);
+          if (result.packs?.length > 0) setPacks(result.packs);
           if (result.bookings) setBookings(result.bookings);
-          if (result.homeContent) setHomeContent(result.homeContent);
+          if (result.homeContent?.studioName) setHomeContent(result.homeContent);
         }
+        setServerStatus('online');
         return result;
+      } else {
+        setServerStatus('offline');
       }
     } catch (e) {
-      console.warn("Servidor no disponible. Trabajando en modo local.");
+      setServerStatus('offline');
+      console.warn("Servidor no disponible.");
     } finally {
       setIsSyncing(false);
     }
     return null;
   }, [homeContent.apiUrl]);
 
-  // Cargar datos al inicio
   useEffect(() => {
     const load = async () => {
-      const savedPacks = localStorage.getItem('streampulse_packs');
-      const savedBookings = localStorage.getItem('streampulse_bookings');
-      const savedHome = localStorage.getItem('streampulse_home');
+      const savedPacks = localStorage.getItem('dj_packs');
+      const savedBookings = localStorage.getItem('dj_bookings');
+      const savedHome = localStorage.getItem('dj_home');
       
       if (savedPacks) setPacks(JSON.parse(savedPacks));
       if (savedBookings) setBookings(JSON.parse(savedBookings));
@@ -60,11 +66,10 @@ const App: React.FC = () => {
     load();
   }, [syncWithServer]);
 
-  // Guardar en LocalStorage cada vez que algo cambie
   useEffect(() => {
-    localStorage.setItem('streampulse_packs', JSON.stringify(packs));
-    localStorage.setItem('streampulse_bookings', JSON.stringify(bookings));
-    localStorage.setItem('streampulse_home', JSON.stringify(homeContent));
+    localStorage.setItem('dj_packs', JSON.stringify(packs));
+    localStorage.setItem('dj_bookings', JSON.stringify(bookings));
+    localStorage.setItem('dj_home', JSON.stringify(homeContent));
   }, [packs, bookings, homeContent]);
 
   const handleAddBooking = async (newBooking: Booking) => {
@@ -72,19 +77,26 @@ const App: React.FC = () => {
     setBookings(updated);
     await syncWithServer('push', { bookings: updated });
     setView('home');
-    alert("¡Reserva guardada con éxito!");
   };
 
   return (
     <div className="min-h-screen bg-black text-white selection:bg-purple-600">
       <Navbar currentView={view} setView={setView} homeContent={homeContent} />
       
-      {isSyncing && (
-        <div className="fixed bottom-8 right-8 z-[100] flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-full shadow-2xl">
-          <div className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-ping"></div>
-          <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Sync...</span>
+      {/* Indicador de Estado del Servidor */}
+      <div className="fixed bottom-6 right-6 z-[100] flex items-center gap-3 bg-zinc-900/90 border border-zinc-800 p-3 rounded-2xl shadow-2xl backdrop-blur-xl">
+        <div className={`w-2 h-2 rounded-full ${
+          serverStatus === 'online' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]' : 
+          serverStatus === 'offline' ? 'bg-red-500 animate-pulse' : 'bg-zinc-700'
+        }`}></div>
+        <div className="flex flex-col">
+          <span className="text-[8px] font-black uppercase tracking-widest text-zinc-500">Servidor Cloud</span>
+          <span className="text-[9px] font-bold uppercase tracking-tighter">
+            {serverStatus === 'online' ? 'Conectado' : serverStatus === 'offline' ? 'Desconectado' : 'Modo Local'}
+          </span>
         </div>
-      )}
+        {isSyncing && <div className="ml-2 w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>}
+      </div>
 
       <main className="pt-24 pb-12 px-6 max-w-7xl mx-auto">
         {view === 'home' && <HomeView onBookNow={() => setView('booking')} packs={packs} content={homeContent} />}
