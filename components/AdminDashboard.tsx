@@ -104,8 +104,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </header>
 
-      {/* --- CONTENIDO DE LAS PESTAÑAS --- */}
-
       {activeTab === 'bookings' && (
         <div className="bg-zinc-900/40 border border-zinc-800 rounded-[2.5rem] overflow-hidden">
           <table className="w-full text-left">
