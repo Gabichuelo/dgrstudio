@@ -31,7 +31,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ packs, bookings, homeCo
     );
   }
 
-  const daysLabels: Record<string, string> = { monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado', sunday: 'Domingo' };
+  const daysLabels: Record<string, string> = { 
+    monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', 
+    thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado', sunday: 'Domingo' 
+  };
+
+  const handleUpdateSchedule = (day: string, updates: Partial<DaySchedule>) => {
+    const newAvailability = { ...homeContent.availability, [day]: { ...homeContent.availability[day as keyof typeof homeContent.availability], ...updates } };
+    onUpdateHome({ ...homeContent, availability: newAvailability as any });
+  };
+
+  const handleAddOverride = () => {
+    if (!newOverrideDate) return;
+    const newOverrides = [...homeContent.availability.overrides, { date: newOverrideDate, schedule: { isOpen: false, start: 10, end: 22 } }];
+    onUpdateHome({ ...homeContent, availability: { ...homeContent.availability, overrides: newOverrides } });
+    setNewOverrideDate('');
+  };
+
+  const handleUpdatePack = (id: string, updates: Partial<Pack>) => {
+    onUpdatePacks(packs.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
 
   return (
     <div className="space-y-10 pb-20">
@@ -61,7 +80,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ packs, bookings, homeCo
                 <tr key={b.id} className="hover:bg-white/[0.01] transition-colors group">
                   <td className="px-8 py-6">
                     <div className="font-bold text-sm text-white uppercase tracking-tight">{b.customerName}</div>
-                    <div className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">{b.date} &bull; {b.startTime}:00</div>
+                    <div className="text-[9px] text-zinc-600 font-black uppercase tracking-widest">{b.date} &bull; {b.startTime}:00 ({b.duration}h)</div>
                   </td>
                   <td className="px-8 py-6 font-orbitron font-bold text-purple-400">{b.totalPrice}€</td>
                   <td className="px-8 py-6 text-right">
@@ -75,6 +94,156 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ packs, bookings, homeCo
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* TAB: HORARIOS */}
+      {activeTab === 'schedule' && (
+        <div className="grid lg:grid-cols-2 gap-8">
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] p-8">
+            <h2 className="text-sm font-black uppercase tracking-widest text-zinc-500 mb-8 border-b border-zinc-800 pb-4">Horario Semanal</h2>
+            <div className="space-y-6">
+              {Object.entries(daysLabels).map(([key, label]) => {
+                const day = homeContent.availability[key as keyof typeof homeContent.availability] as DaySchedule;
+                return (
+                  <div key={key} className="flex items-center justify-between gap-4 p-4 bg-black/20 rounded-2xl border border-zinc-800/50">
+                    <div className="w-24 font-bold text-xs uppercase">{label}</div>
+                    <div className="flex items-center gap-2">
+                      <input type="number" value={day.start} onChange={(e) => handleUpdateSchedule(key, { start: Number(e.target.value) })} className="w-16 bg-zinc-800 border-none rounded-lg p-2 text-xs text-center" min="0" max="23" />
+                      <span className="text-zinc-600">-</span>
+                      <input type="number" value={day.end} onChange={(e) => handleUpdateSchedule(key, { end: Number(e.target.value) })} className="w-16 bg-zinc-800 border-none rounded-lg p-2 text-xs text-center" min="0" max="23" />
+                    </div>
+                    <button 
+                      onClick={() => handleUpdateSchedule(key, { isOpen: !day.isOpen })}
+                      className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${day.isOpen ? 'bg-green-600/20 text-green-500 border border-green-500/30' : 'bg-red-600/20 text-red-500 border border-red-500/30'}`}
+                    >
+                      {day.isOpen ? 'Abierto' : 'Cerrado'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] p-8">
+            <h2 className="text-sm font-black uppercase tracking-widest text-zinc-500 mb-8 border-b border-zinc-800 pb-4">Cierres Especiales</h2>
+            <div className="flex gap-2 mb-6">
+              <input type="date" value={newOverrideDate} onChange={(e) => setNewOverrideDate(e.target.value)} className="flex-1 bg-zinc-800 border-none rounded-xl p-3 text-xs" />
+              <button onClick={handleAddOverride} className="bg-purple-600 px-6 rounded-xl text-[9px] font-black uppercase tracking-widest">Añadir</button>
+            </div>
+            <div className="space-y-2">
+              {homeContent.availability.overrides.map((ov, idx) => (
+                <div key={idx} className="flex items-center justify-between p-4 bg-red-500/5 border border-red-500/10 rounded-2xl">
+                  <span className="font-mono text-xs">{ov.date}</span>
+                  <button 
+                    onClick={() => {
+                      const updated = homeContent.availability.overrides.filter((_, i) => i !== idx);
+                      onUpdateHome({ ...homeContent, availability: { ...homeContent.availability, overrides: updated } });
+                    }} 
+                    className="text-red-500 text-[10px] font-black uppercase"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: SERVICIOS (PACKS) */}
+      {activeTab === 'packs' && (
+        <div className="grid md:grid-cols-2 gap-6">
+          {packs.map(pack => (
+            <div key={pack.id} className="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] p-8 space-y-6">
+              <div className="flex justify-between items-start">
+                <input value={pack.icon} onChange={(e) => handleUpdatePack(pack.id, { icon: e.target.value })} className="text-4xl bg-transparent border-none w-16" />
+                <button onClick={() => handleUpdatePack(pack.id, { isActive: !pack.isActive })} className={`px-4 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest ${pack.isActive ? 'bg-green-500/20 text-green-500' : 'bg-zinc-800 text-zinc-500'}`}>
+                  {pack.isActive ? 'Activo' : 'Pausado'}
+                </button>
+              </div>
+              <input value={pack.name} onChange={(e) => handleUpdatePack(pack.id, { name: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-sm font-bold uppercase tracking-tight focus:border-purple-500 outline-none" placeholder="Nombre del Pack" />
+              <textarea value={pack.description} onChange={(e) => handleUpdatePack(pack.id, { description: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs text-zinc-400 h-24 resize-none outline-none focus:border-purple-500" placeholder="Descripción" />
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <label className="block text-[8px] font-black uppercase text-zinc-600 mb-1 ml-2">Precio/Hora</label>
+                  <input type="number" value={pack.pricePerHour} onChange={(e) => handleUpdatePack(pack.id, { pricePerHour: Number(e.target.value) })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-sm font-bold font-orbitron text-purple-400 outline-none" />
+                </div>
+              </div>
+            </div>
+          ))}
+          <button className="bg-zinc-900/20 border-2 border-dashed border-zinc-800 rounded-[2.5rem] p-12 flex flex-col items-center justify-center gap-4 text-zinc-600 hover:text-purple-500 hover:border-purple-500/50 transition-all group">
+            <span className="text-4xl group-hover:scale-110 transition-transform">+</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">Añadir Nuevo Servicio</span>
+          </button>
+        </div>
+      )}
+
+      {/* TAB: CMS (WEB) */}
+      {activeTab === 'cms' && (
+        <div className="max-w-4xl mx-auto bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] p-12 space-y-10">
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Nombre del Estudio</label>
+              <input value={homeContent.studioName} onChange={(e) => onUpdateHome({ ...homeContent, studioName: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-2xl px-6 py-4 text-sm font-bold outline-none focus:border-purple-500 transition-all" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Email de Contacto</label>
+              <input value={homeContent.adminEmail} onChange={(e) => onUpdateHome({ ...homeContent, adminEmail: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-2xl px-6 py-4 text-sm outline-none focus:border-purple-500 transition-all" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Título Principal (Hero)</label>
+            <textarea value={homeContent.heroTitle} onChange={(e) => onUpdateHome({ ...homeContent, heroTitle: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-2xl px-6 py-4 text-2xl font-orbitron font-bold outline-none focus:border-purple-500 transition-all h-32" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[9px] font-black uppercase text-zinc-500 tracking-widest ml-1">Subtítulo Hero</label>
+            <textarea value={homeContent.heroSubtitle} onChange={(e) => onUpdateHome({ ...homeContent, heroSubtitle: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-2xl px-6 py-4 text-sm text-zinc-400 outline-none focus:border-purple-500 transition-all h-24" />
+          </div>
+        </div>
+      )}
+
+      {/* TAB: PAGOS */}
+      {activeTab === 'payments' && (
+        <div className="grid lg:grid-cols-3 gap-8">
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] p-8 space-y-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-black uppercase tracking-widest text-white">Bizum</h3>
+              <input type="checkbox" checked={homeContent.payments.bizumEnabled} onChange={(e) => onUpdateHome({ ...homeContent, payments: { ...homeContent.payments, bizumEnabled: e.target.checked } })} className="w-5 h-5 accent-purple-600" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[8px] font-black uppercase text-zinc-600 tracking-widest">Número de Teléfono</label>
+              <input value={homeContent.payments.bizumPhone} onChange={(e) => onUpdateHome({ ...homeContent, payments: { ...homeContent.payments, bizumPhone: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-sm outline-none focus:border-purple-500" />
+            </div>
+          </div>
+
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] p-8 space-y-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-black uppercase tracking-widest text-white">Revolut</h3>
+              <input type="checkbox" checked={homeContent.payments.revolutEnabled} onChange={(e) => onUpdateHome({ ...homeContent, payments: { ...homeContent.payments, revolutEnabled: e.target.checked } })} className="w-5 h-5 accent-purple-600" />
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[8px] font-black uppercase text-zinc-600 tracking-widest">Enlace (Revolut.me)</label>
+                <input value={homeContent.payments.revolutLink} onChange={(e) => onUpdateHome({ ...homeContent, payments: { ...homeContent.payments, revolutLink: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs outline-none focus:border-purple-500" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[8px] font-black uppercase text-zinc-600 tracking-widest">Tag (@usuario)</label>
+                <input value={homeContent.payments.revolutTag} onChange={(e) => onUpdateHome({ ...homeContent, payments: { ...homeContent.payments, revolutTag: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs outline-none focus:border-purple-500" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-zinc-900/50 border border-zinc-800 rounded-[2.5rem] p-8 space-y-6 border-purple-500/20 shadow-[0_0_30px_rgba(168,85,247,0.05)]">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-black uppercase tracking-widest text-purple-400">Mollie Pro</h3>
+              <input type="checkbox" checked={homeContent.payments.mollieEnabled} onChange={(e) => onUpdateHome({ ...homeContent, payments: { ...homeContent.payments, mollieEnabled: e.target.checked } })} className="w-5 h-5 accent-purple-600" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[8px] font-black uppercase text-zinc-600 tracking-widest">API Key (Live/Test)</label>
+              <input type="password" value={homeContent.payments.mollieApiKey} onChange={(e) => onUpdateHome({ ...homeContent, payments: { ...homeContent.payments, mollieApiKey: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs outline-none focus:border-purple-500 text-purple-400" />
+              <p className="text-[7px] uppercase font-black tracking-tighter text-zinc-600 mt-2">Usado para Tarjeta, Apple Pay y Google Pay.</p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -113,13 +282,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ packs, bookings, homeCo
               </div>
             </div>
           </section>
-        </div>
-      )}
-
-      {/* OTRAS TABS MANTENIDAS POR COMPATIBILIDAD */}
-      {(activeTab === 'schedule' || activeTab === 'packs' || activeTab === 'cms' || activeTab === 'payments') && (
-        <div className="py-20 text-center text-zinc-700 uppercase font-black text-[10px] tracking-[0.3em] italic">
-           Esta sección se puede editar normalmente.
         </div>
       )}
     </div>
