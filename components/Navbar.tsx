@@ -15,6 +15,8 @@ const Navbar: React.FC<NavbarProps> = ({ currentView, setView, homeContent }) =>
         <div 
           className="flex items-center gap-3 cursor-pointer group"
           onClick={() => setView('home')}
+          onDoubleClick={() => setView('admin')}
+          title="Doble clic para acceso admin"
         >
           <div className="w-10 h-10 bg-gradient-to-tr from-purple-600 to-blue-500 rounded-2xl flex items-center justify-center font-black text-white group-hover:rotate-12 transition-all shadow-lg shadow-purple-600/20">
             {homeContent.studioName.charAt(0)}
@@ -40,14 +42,6 @@ const Navbar: React.FC<NavbarProps> = ({ currentView, setView, homeContent }) =>
             }`}
           >
             Reservar
-          </button>
-          <button 
-            onClick={() => setView('admin')}
-            className={`px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              currentView === 'admin' ? 'text-white bg-zinc-800' : 'text-zinc-600 hover:text-white'
-            }`}
-          >
-            Admin
           </button>
         </div>
       </div>
