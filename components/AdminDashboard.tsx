@@ -106,46 +106,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
   };
 
-  const testEmailConfig = async () => {
-     if(!homeContent.apiUrl || !homeContent.emailConfig.smtpUser || !homeContent.emailConfig.smtpPassword) {
-         alert("❌ Faltan datos: Asegúrate de rellenar el usuario SMTP y la CONTRASEÑA antes de probar.");
-         return;
-     }
-     
-     const btn = document.getElementById('testEmailBtn') as HTMLButtonElement;
-     if(btn) {
-         btn.innerText = "⏳ Conectando con servidor...";
-         btn.disabled = true;
-     }
-
-     try {
-       const res = await fetch(`${homeContent.apiUrl.replace(/\/$/, '')}/api/send-email`, {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({
-               to: homeContent.emailConfig.smtpUser, // Enviarse a sí mismo
-               subject: "✅ Test de Configuración StreamPulse",
-               html: "<h1>¡Funciona!</h1><p>El sistema de emails está correctamente configurado y conectado con tu servidor.</p>",
-               config: homeContent.emailConfig
-           })
-       });
-       const data = await res.json();
-       
-       if(data.success) {
-           alert("✅ ¡ÉXITO! Email enviado correctamente. Revisa tu bandeja de entrada.");
-       } else {
-           alert("❌ ERROR: " + (data.error || "Error desconocido. Revisa los logs en Render."));
-       }
-     } catch (e) {
-       alert("❌ ERROR DE RED: No se pudo conectar con tu Backend. Verifica que la URL de la API es correcta.");
-     } finally {
-        if(btn) {
-            btn.innerText = "Probar Configuración";
-            btn.disabled = false;
-        }
-     }
-  };
-
   const calendarDays = useMemo(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -535,10 +495,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                <div className="space-y-5">
                   <div className="p-5 bg-black/40 rounded-2xl border border-zinc-800 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Bizum</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Bizum & WhatsApp Contact</span>
                       <button onClick={() => handleUpdateHome({ payments: { ...homeContent.payments, bizumEnabled: !homeContent.payments.bizumEnabled } })} className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase ${homeContent.payments.bizumEnabled ? 'bg-blue-600 text-white shadow-lg' : 'bg-zinc-800 text-zinc-500'}`}>{homeContent.payments.bizumEnabled ? 'Activo' : 'Inactivo'}</button>
                     </div>
-                    <input value={homeContent.payments.bizumPhone} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, bizumPhone: e.target.value } })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-blue-600" placeholder="Teléfono para Bizum" />
+                    <input value={homeContent.payments.bizumPhone} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, bizumPhone: e.target.value } })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-blue-600" placeholder="Teléfono (también para recibir reservas WhatsApp)" />
+                    <p className="text-[8px] text-zinc-600 italic">Este número recibirá los mensajes de confirmación de reserva.</p>
                   </div>
                   <div className="p-5 bg-black/40 rounded-2xl border border-zinc-800 space-y-3">
                     <div className="flex items-center justify-between">
@@ -561,40 +522,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </section>
 
             <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl space-y-6">
-               <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 tracking-widest">Emails (SMTP)</h3>
-               <div className="bg-blue-900/10 border border-blue-900/30 p-4 rounded-xl mb-4">
-                  <p className="text-[9px] text-blue-300 font-medium leading-relaxed">
-                    <strong>IMPORTANTE PARA GMAIL:</strong> No uses tu contraseña normal. Debes usar una <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" className="underline text-white font-bold">Contraseña de Aplicación</a>.
-                  </p>
-               </div>
-               <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Servidor Host</label>
-                    <input value={homeContent.emailConfig.smtpHost} onChange={e => handleUpdateHome({ emailConfig: { ...homeContent.emailConfig, smtpHost: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-purple-600" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Email de Envío</label>
-                    <input value={homeContent.emailConfig.smtpUser} onChange={e => handleUpdateHome({ emailConfig: { ...homeContent.emailConfig, smtpUser: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-purple-600" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Contraseña (App Password)</label>
-                    <input type="password" value={homeContent.emailConfig.smtpPassword || ''} onChange={e => handleUpdateHome({ emailConfig: { ...homeContent.emailConfig, smtpPassword: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-purple-600" placeholder="••••••••••••" />
-                  </div>
-                  <div className="pt-4 flex gap-2">
-                     <button onClick={testEmailConfig} id="testEmailBtn" className="flex-1 bg-white text-black py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all">Probar Configuración</button>
-                     <button onClick={onPushToCloud} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-green-500 transition-all">Guardar Cambios</button>
-                  </div>
+               <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 tracking-widest">Sincronización Cloud</h3>
+               <div className="flex flex-col gap-4">
+                <input value={homeContent.apiUrl} onChange={e => handleUpdateHome({ apiUrl: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl px-6 py-4 text-[10px] text-blue-500 font-mono tracking-widest" placeholder="https://..." />
+                <button onClick={onPushToCloud} className="w-full bg-white text-black py-4 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-purple-600 hover:text-white transition-all shadow-xl">Empujar Datos</button>
                </div>
             </section>
           </div>
-
-          <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl space-y-6">
-              <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 tracking-widest">Sincronización Cloud</h3>
-              <div className="flex gap-4">
-                <input value={homeContent.apiUrl} onChange={e => handleUpdateHome({ apiUrl: e.target.value })} className="flex-1 bg-black border border-zinc-800 rounded-xl px-6 py-4 text-[10px] text-blue-500 font-mono tracking-widest" placeholder="https://..." />
-                <button onClick={onPushToCloud} className="bg-white text-black px-10 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-purple-600 hover:text-white transition-all shadow-xl">Empujar Datos</button>
-              </div>
-          </section>
         </div>
       )}
     </div>
