@@ -7,10 +7,11 @@ interface BookingViewProps {
   bookings: Booking[];
   homeContent: HomeContent;
   onSubmit: (booking: Booking) => void;
+  onReturnHome: () => void;
   initialPackId?: string | null;
 }
 
-const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent, onSubmit, initialPackId }) => {
+const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent, onSubmit, onReturnHome, initialPackId }) => {
   const activePacks = useMemo(() => packs.filter(p => p.isActive), [packs]);
   
   const [bookingMode, setBookingMode] = useState<'session' | 'bono'>('session');
@@ -37,6 +38,7 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
   const [errorMsg, setErrorMsg] = useState('');
 
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success'>('idle');
+  const [lastPaymentMethod, setLastPaymentMethod] = useState<string | null>(null);
 
   useEffect(() => {
     if (initialPackId) {
@@ -139,6 +141,43 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
     setSelectedExtrasIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
+  const sendConfirmationEmail = async (booking: Booking) => {
+    if (!homeContent.apiUrl || !homeContent.emailConfig.smtpUser) return;
+
+    const subject = `Reserva Confirmada #${booking.id} - ${homeContent.studioName}`;
+    const htmlContent = `
+      <div style="font-family: sans-serif; color: #333;">
+        <h1>¡Hola ${booking.customerName}!</h1>
+        <p>Hemos recibido tu solicitud de reserva.</p>
+        <hr/>
+        <h3>Detalles:</h3>
+        <ul>
+          <li><strong>Fecha:</strong> ${booking.date}</li>
+          <li><strong>Hora:</strong> ${booking.startTime}:00 (${booking.duration}h)</li>
+          <li><strong>Pack:</strong> ${selectedPack.name}</li>
+          <li><strong>Total:</strong> ${booking.totalPrice}€</li>
+        </ul>
+        <p>Si has elegido pago por Bizum o Revolut, recuerda realizar el pago para validar la reserva definitivamente.</p>
+        <p>Atentamente,<br/>El equipo de ${homeContent.studioName}</p>
+      </div>
+    `;
+
+    try {
+      await fetch(`${homeContent.apiUrl.replace(/\/$/, '')}/api/send-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: booking.customerEmail,
+          subject: subject,
+          html: htmlContent,
+          config: homeContent.emailConfig
+        })
+      });
+    } catch (e) {
+      console.error("Error enviando email", e);
+    }
+  };
+
   const handleFinalSubmit = (method: 'bizum' | 'revolut' | 'mollie' | 'bono') => {
     if (bookingMode === 'session' && (selectedHour === null || errorMsg)) return;
     if (bookingMode === 'bono' && (!customerName || !customerEmail)) return;
@@ -155,23 +194,79 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
       customerPhone,
       totalPrice,
       status: (method === 'mollie' || method === 'bono') ? 'confirmed' : 'pending_verification',
-      paymentMethod: method === 'mollie' || method === 'bono' ? method : 'bizum',
+      paymentMethod: method === 'mollie' || method === 'bono' ? method : (method === 'revolut' ? 'revolut' : 'bizum'),
       appliedCouponCode: appliedCoupon?.code,
       appliedBonoCode: appliedBono?.code,
       createdAt: Date.now()
     };
 
     onSubmit(newBooking);
+    setLastPaymentMethod(method);
     setPaymentStatus('success');
+
+    // Enviar email en segundo plano
+    sendConfirmationEmail(newBooking);
   };
 
   if (paymentStatus === 'success') {
+    const isManualPayment = lastPaymentMethod === 'bizum' || lastPaymentMethod === 'revolut';
+    
     return (
-      <div className="max-w-xl mx-auto py-20 text-center animate-in zoom-in duration-500">
-        <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center text-5xl mx-auto mb-10 shadow-2xl">✓</div>
-        <h2 className="text-4xl font-orbitron font-bold mb-4 uppercase tracking-tighter">Reserva Realizada</h2>
-        <p className="text-zinc-500 mb-12 text-lg font-light leading-relaxed">Tu solicitud ha sido enviada con éxito. Revisa tu email para los detalles finales.</p>
-        <button onClick={() => window.location.reload()} className="bg-white text-black py-4 px-16 rounded-2xl font-black uppercase tracking-widest text-[11px] hover:bg-purple-600 hover:text-white transition-all shadow-xl">Entendido</button>
+      <div className="max-w-2xl mx-auto py-20 text-center animate-in zoom-in duration-500 px-6">
+        <div className={`w-24 h-24 rounded-full flex items-center justify-center text-5xl mx-auto mb-10 shadow-2xl ${isManualPayment ? 'bg-blue-500' : 'bg-green-500'}`}>
+            {isManualPayment ? 'ℹ️' : '✓'}
+        </div>
+        <h2 className="text-4xl font-orbitron font-bold mb-6 uppercase tracking-tighter">
+            {isManualPayment ? 'Reserva Registrada' : 'Reserva Confirmada'}
+        </h2>
+        
+        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 mb-10 shadow-inner">
+            {isManualPayment ? (
+                <>
+                    <p className="text-white text-lg font-bold mb-4 uppercase">Siguiente paso: Realizar Pago</p>
+                    <p className="text-zinc-400 font-light leading-relaxed mb-6">
+                        Para confirmar tu reserva, envía el importe de <strong className="text-white">{totalPrice.toFixed(0)}€</strong> mediante:
+                    </p>
+                    
+                    {lastPaymentMethod === 'bizum' && (
+                       <a href={`tel:${homeContent.payments.bizumPhone.replace(/\s/g, '')}`} className="block bg-blue-600/10 border border-blue-500/30 p-6 rounded-2xl mb-6 hover:bg-blue-600/20 transition-all cursor-pointer group text-decoration-none">
+                          <p className="text-[10px] font-black uppercase text-blue-400 tracking-widest mb-2">Pulsar para hacer Bizum a</p>
+                          <p className="text-3xl font-mono font-bold text-white tracking-wider group-hover:scale-105 transition-transform">{homeContent.payments.bizumPhone}</p>
+                          <span className="text-[9px] text-zinc-500 uppercase font-black mt-2 block">Abre la agenda de tu teléfono</span>
+                       </a>
+                    )}
+
+                    {lastPaymentMethod === 'revolut' && (
+                       <div className="bg-white/10 border border-white/20 p-6 rounded-2xl mb-6">
+                          <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-2">Enviar Revolut al usuario</p>
+                          <p className="text-3xl font-mono font-bold text-white tracking-wider mb-2">{homeContent.payments.revolutTag}</p>
+                          {homeContent.payments.revolutLink && (
+                            <a href={homeContent.payments.revolutLink} target="_blank" rel="noreferrer" className="inline-block bg-white text-black px-4 py-2 rounded-lg text-[10px] font-black uppercase hover:scale-105 transition-transform shadow-lg">Pagar en Revolut.me →</a>
+                          )}
+                       </div>
+                    )}
+
+                    <div className="flex justify-center gap-4 text-[10px] font-black uppercase tracking-widest text-zinc-600">
+                        <span>1. Realizar Pago</span>
+                        <span>→</span>
+                        <span>2. Te Confirmamos por WhatsApp</span>
+                    </div>
+                </>
+            ) : (
+                <p className="text-zinc-400 text-lg font-light leading-relaxed">
+                    Tu reserva ha sido confirmada correctamente. Hemos enviado un email a 
+                    <strong className="text-white mx-1">{customerEmail}</strong> 
+                    con todos los detalles del acceso y el equipamiento.
+                </p>
+            )}
+        </div>
+
+        <button 
+            onClick={onReturnHome} 
+            className="bg-white text-black py-4 px-16 rounded-2xl font-black uppercase tracking-widest text-[11px] hover:bg-purple-600 hover:text-white transition-all shadow-xl"
+        >
+            Entendido
+        </button>
       </div>
     );
   }
@@ -342,6 +437,7 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
            ) : (
              <>
                {homeContent.payments.bizumEnabled && <button onClick={() => handleFinalSubmit('bizum')} disabled={!customerName || (bookingMode === 'session' && !selectedHour)} className="w-full bg-[#00AAFF] text-white py-5 rounded-2xl font-black text-[12px] uppercase shadow-2xl disabled:opacity-20 transform hover:scale-105 transition-all">Pagar con Bizum</button>}
+               {homeContent.payments.revolutEnabled && <button onClick={() => handleFinalSubmit('revolut')} disabled={!customerName || (bookingMode === 'session' && !selectedHour)} className="w-full bg-white text-black py-5 rounded-2xl font-black text-[12px] uppercase shadow-2xl disabled:opacity-20 transform hover:scale-105 transition-all">Pagar con Revolut</button>}
                {homeContent.payments.mollieEnabled && <button onClick={() => handleFinalSubmit('mollie')} disabled={!customerName || (bookingMode === 'session' && !selectedHour)} className="w-full bg-purple-600 text-white py-5 rounded-2xl font-black text-[12px] uppercase shadow-2xl disabled:opacity-20 transform hover:scale-105 transition-all">Pago con Tarjeta</button>}
              </>
            )}
