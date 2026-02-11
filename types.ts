@@ -1,13 +1,17 @@
 
 export interface DaySchedule {
   isOpen: boolean;
-  start: number; // 0-23
-  end: number;   // 0-23
+  start: number; 
+  end: number;   
 }
 
 export interface DateOverride {
-  date: string; // "YYYY-MM-DD"
-  schedule: DaySchedule;
+  id: string;
+  date: string; 
+  isOpen: boolean;
+  start?: number;
+  end?: number;
+  reason?: string;
 }
 
 export interface Availability {
@@ -24,6 +28,7 @@ export interface Availability {
 export interface EmailConfig {
   smtpHost: string;
   smtpUser: string;
+  smtpPassword?: string; // Nuevo campo para la contraseña
   useAppPassword: boolean;
 }
 
@@ -37,6 +42,13 @@ export interface PaymentConfig {
   revolutTag: string;
 }
 
+export interface Extra {
+  id: string;
+  name: string;
+  price: number;
+  icon: string;
+}
+
 export interface Pack {
   id: string;
   name: string;
@@ -47,31 +59,66 @@ export interface Pack {
   isActive: boolean;
 }
 
+export interface BonoPack {
+  id: string;
+  hours: number;
+  discountPercentage: number;
+  name: string;
+  description: string;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  discountPercentage: number;
+  isActive: boolean;
+}
+
+export interface HourBono {
+  id: string;
+  code: string;
+  customerName: string;
+  totalHours: number;
+  remainingHours: number;
+  isActive: boolean;
+}
+
 export interface HomeContent {
   studioName: string;
   heroTitle: string;
   heroSubtitle: string;
+  heroImageUrl: string;
   bannerTitle: string;
   studioDescription: string;
   adminEmail: string;
+  footerText: string;
+  footerSecondaryText: string;
   availability: Availability;
   emailConfig: EmailConfig;
   payments: PaymentConfig;
-  apiUrl: string; // URL del servidor Node.js en el VPS
+  extras: Extra[];
+  coupons: Coupon[];
+  hourBonos: HourBono[];
+  bonoPacks: BonoPack[];
+  apiUrl: string;
+  seasonalDiscount?: number;
 }
 
 export interface Booking {
   id: string;
   date: string;
-  startTime: number;
-  duration: number;
+  startTime: number; 
+  duration: number;  
   packId: string;
+  selectedExtrasIds: string[];
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
   totalPrice: number;
   status: 'confirmed' | 'pending_verification' | 'cancelled';
-  paymentMethod: 'revolut' | 'stripe' | 'bizum' | 'mollie';
+  paymentMethod: 'revolut' | 'stripe' | 'bizum' | 'mollie' | 'bono';
+  appliedCouponCode?: string;
+  appliedBonoCode?: string;
   createdAt: number;
 }
 
