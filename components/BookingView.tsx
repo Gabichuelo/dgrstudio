@@ -39,6 +39,7 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
 
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success'>('idle');
   const [lastPaymentMethod, setLastPaymentMethod] = useState<string | null>(null);
+  const [lastBooking, setLastBooking] = useState<Booking | null>(null);
 
   useEffect(() => {
     if (initialPackId) {
@@ -100,13 +101,11 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
 
     if (bookingMode === 'bono') {
       const discount = bonoSize === 3 ? 0.05 : bonoSize === 5 ? 0.10 : 0.20;
-      // Los extras en los bonos se cobran por hora dentro del bono y se aplica el descuento del bono al total
       const hourlyBase = selectedPack.pricePerHour + extrasPricePerHour;
       return (hourlyBase * bonoSize) * (1 - discount);
     }
 
     if (appliedBono) {
-      // Si usa bono, solo paga los extras de esta sesión específica (se asume precio por hora de extra * duración)
       return extrasPricePerHour * duration;
     }
 
@@ -141,41 +140,22 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
     setSelectedExtrasIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
-  const sendConfirmationEmail = async (booking: Booking) => {
-    if (!homeContent.apiUrl || !homeContent.emailConfig.smtpUser) return;
+  // Genera el enlace de WhatsApp para enviar al dueño del estudio
+  const getStudioWhatsAppLink = (booking: Booking) => {
+    // Usamos el teléfono de Bizum como contacto del estudio si no hay otro definido
+    const studioPhone = homeContent.payments.bizumPhone.replace(/\D/g, ''); 
+    if (!studioPhone) return null;
 
-    const subject = `Reserva Confirmada #${booking.id} - ${homeContent.studioName}`;
-    const htmlContent = `
-      <div style="font-family: sans-serif; color: #333;">
-        <h1>¡Hola ${booking.customerName}!</h1>
-        <p>Hemos recibido tu solicitud de reserva.</p>
-        <hr/>
-        <h3>Detalles:</h3>
-        <ul>
-          <li><strong>Fecha:</strong> ${booking.date}</li>
-          <li><strong>Hora:</strong> ${booking.startTime}:00 (${booking.duration}h)</li>
-          <li><strong>Pack:</strong> ${selectedPack.name}</li>
-          <li><strong>Total:</strong> ${booking.totalPrice}€</li>
-        </ul>
-        <p>Si has elegido pago por Bizum o Revolut, recuerda realizar el pago para validar la reserva definitivamente.</p>
-        <p>Atentamente,<br/>El equipo de ${homeContent.studioName}</p>
-      </div>
-    `;
-
-    try {
-      await fetch(`${homeContent.apiUrl.replace(/\/$/, '')}/api/send-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: booking.customerEmail,
-          subject: subject,
-          html: htmlContent,
-          config: homeContent.emailConfig
-        })
-      });
-    } catch (e) {
-      console.error("Error enviando email", e);
+    const extrasNames = booking.selectedExtrasIds.map(id => homeContent.extras.find(e => e.id === id)?.name).join(', ');
+    
+    let text = '';
+    if (bookingMode === 'bono') {
+        text = `👋 Hola, he comprado un *BONO de ${bonoSize} HORAS* en ${homeContent.studioName}.\n\n👤 *${booking.customerName}*\n💰 Total: ${booking.totalPrice}€\n📧 ${booking.customerEmail}\n\nEspero confirmación.`;
+    } else {
+        text = `👋 Hola, he realizado una reserva en ${homeContent.studioName}.\n\n📅 *${booking.date}*\n⏰ *${booking.startTime}:00* (${booking.duration}h)\n📦 ${selectedPack.name}\n👤 *${booking.customerName}*\n💰 Total: ${booking.totalPrice}€\n${extrasNames ? `➕ Extras: ${extrasNames}\n` : ''}\nEspero confirmación.`;
     }
+
+    return `https://wa.me/34${studioPhone}?text=${encodeURIComponent(text)}`;
   };
 
   const handleFinalSubmit = (method: 'bizum' | 'revolut' | 'mollie' | 'bono') => {
@@ -201,15 +181,14 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
     };
 
     onSubmit(newBooking);
+    setLastBooking(newBooking);
     setLastPaymentMethod(method);
     setPaymentStatus('success');
-
-    // Enviar email en segundo plano
-    sendConfirmationEmail(newBooking);
   };
 
-  if (paymentStatus === 'success') {
+  if (paymentStatus === 'success' && lastBooking) {
     const isManualPayment = lastPaymentMethod === 'bizum' || lastPaymentMethod === 'revolut';
+    const waLink = getStudioWhatsAppLink(lastBooking);
     
     return (
       <div className="max-w-2xl mx-auto py-20 text-center animate-in zoom-in duration-500 px-6">
@@ -245,27 +224,30 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
                           )}
                        </div>
                     )}
-
-                    <div className="flex justify-center gap-4 text-[10px] font-black uppercase tracking-widest text-zinc-600">
-                        <span>1. Realizar Pago</span>
-                        <span>→</span>
-                        <span>2. Te Confirmamos por WhatsApp</span>
-                    </div>
                 </>
             ) : (
                 <p className="text-zinc-400 text-lg font-light leading-relaxed">
-                    Tu reserva ha sido confirmada correctamente. Hemos enviado un email a 
-                    <strong className="text-white mx-1">{customerEmail}</strong> 
-                    con todos los detalles del acceso y el equipamiento.
+                    Tu reserva ha sido registrada correctamente.
                 </p>
             )}
+
+            <div className="mt-8 border-t border-zinc-800 pt-8">
+                <p className="text-[10px] font-black uppercase text-zinc-500 tracking-widest mb-4">ÚLTIMO PASO OBLIGATORIO</p>
+                {waLink && (
+                    <a href={waLink} target="_blank" rel="noopener noreferrer" className="block w-full bg-[#25D366] text-white py-5 rounded-2xl font-black text-[14px] uppercase shadow-[0_0_20px_rgba(37,211,102,0.4)] hover:scale-105 transition-transform flex items-center justify-center gap-3">
+                        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+                        Enviar Confirmación por WhatsApp
+                    </a>
+                )}
+                <p className="text-[8px] text-zinc-600 mt-2 uppercase font-black">Esto abrirá tu WhatsApp con los detalles del pedido</p>
+            </div>
         </div>
 
         <button 
             onClick={onReturnHome} 
             className="bg-white text-black py-4 px-16 rounded-2xl font-black uppercase tracking-widest text-[11px] hover:bg-purple-600 hover:text-white transition-all shadow-xl"
         >
-            Entendido
+            Volver al Inicio
         </button>
       </div>
     );
