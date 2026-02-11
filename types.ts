@@ -25,11 +25,12 @@ export interface Availability {
   overrides: DateOverride[];
 }
 
+// Configuración de email opcional/deprecada
 export interface EmailConfig {
-  smtpHost: string;
-  smtpUser: string;
-  smtpPassword?: string; // Nuevo campo para la contraseña
-  useAppPassword: boolean;
+  smtpHost?: string;
+  smtpUser?: string;
+  smtpPassword?: string;
+  useAppPassword?: boolean;
 }
 
 export interface PaymentConfig {
@@ -94,7 +95,7 @@ export interface HomeContent {
   footerText: string;
   footerSecondaryText: string;
   availability: Availability;
-  emailConfig: EmailConfig;
+  emailConfig?: EmailConfig; // Ahora es opcional
   payments: PaymentConfig;
   extras: Extra[];
   coupons: Coupon[];
