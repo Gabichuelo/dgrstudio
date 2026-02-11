@@ -147,7 +147,9 @@ export function App() {
     }
 
     performSave({ bookings: updatedBookings, home: updatedHome });
-    setView('home');
+    // ELIMINADO: setView('home'); 
+    // Mantenemos la vista actual para que BookingView muestre la pantalla de éxito.
+    // BookingView llamará a setView('home') cuando el usuario pulse "Entendido".
     setPreselectedPackId(null);
   };
 
@@ -182,6 +184,7 @@ export function App() {
                 bookings={bookings} 
                 homeContent={homeContent} 
                 onSubmit={handleAddBooking} 
+                onReturnHome={() => setView('home')}
                 initialPackId={preselectedPackId} 
             />
         )}
