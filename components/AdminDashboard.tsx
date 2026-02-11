@@ -108,12 +108,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const testEmailConfig = async () => {
      if(!homeContent.apiUrl || !homeContent.emailConfig.smtpUser || !homeContent.emailConfig.smtpPassword) {
-         alert("Faltan datos de configuración (API URL, Usuario SMTP o Contraseña)");
+         alert("❌ Faltan datos: Asegúrate de rellenar el usuario SMTP y la CONTRASEÑA antes de probar.");
          return;
      }
      
      const btn = document.getElementById('testEmailBtn') as HTMLButtonElement;
-     if(btn) btn.innerText = "Enviando...";
+     if(btn) {
+         btn.innerText = "⏳ Conectando con servidor...";
+         btn.disabled = true;
+     }
 
      try {
        const res = await fetch(`${homeContent.apiUrl.replace(/\/$/, '')}/api/send-email`, {
@@ -121,18 +124,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
                to: homeContent.emailConfig.smtpUser, // Enviarse a sí mismo
-               subject: "Test de Configuración StreamPulse",
-               html: "<h1>¡Funciona!</h1><p>El sistema de emails está correctamente configurado.</p>",
+               subject: "✅ Test de Configuración StreamPulse",
+               html: "<h1>¡Funciona!</h1><p>El sistema de emails está correctamente configurado y conectado con tu servidor.</p>",
                config: homeContent.emailConfig
            })
        });
        const data = await res.json();
-       if(data.success) alert("¡Email enviado con éxito! Revisa tu bandeja de entrada.");
-       else alert("Error al enviar: " + (data.error || "Desconocido"));
+       
+       if(data.success) {
+           alert("✅ ¡ÉXITO! Email enviado correctamente. Revisa tu bandeja de entrada.");
+       } else {
+           alert("❌ ERROR: " + (data.error || "Error desconocido. Revisa los logs en Render."));
+       }
      } catch (e) {
-       alert("Error de conexión con el servidor Backend. Verifica la API URL.");
+       alert("❌ ERROR DE RED: No se pudo conectar con tu Backend. Verifica que la URL de la API es correcta.");
      } finally {
-        if(btn) btn.innerText = "Probar Configuración";
+        if(btn) {
+            btn.innerText = "Probar Configuración";
+            btn.disabled = false;
+        }
      }
   };
 
@@ -194,6 +204,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </header>
 
+      {/* --- CÓDIGO DE LAS PESTAÑAS ANTERIORES (CALENDAR, BOOKINGS, ETC) SE MANTIENE IGUAL HASTA CONFIG --- */}
+      
       {activeTab === 'calendar' && (
         <div className="grid lg:grid-cols-4 gap-8">
            <div className="lg:col-span-3 bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-10 shadow-2xl">
@@ -552,7 +564,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 tracking-widest">Emails (SMTP)</h3>
                <div className="bg-blue-900/10 border border-blue-900/30 p-4 rounded-xl mb-4">
                   <p className="text-[9px] text-blue-300 font-medium leading-relaxed">
-                    NOTA: El envío de emails requiere que el servidor backend (API URL) esté funcionando y configurado. Las credenciales de SMTP se envían de forma segura al servidor.
+                    <strong>IMPORTANTE PARA GMAIL:</strong> No uses tu contraseña normal. Debes usar una <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener" className="underline text-white font-bold">Contraseña de Aplicación</a>.
                   </p>
                </div>
                <div className="space-y-4">
@@ -568,8 +580,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Contraseña (App Password)</label>
                     <input type="password" value={homeContent.emailConfig.smtpPassword || ''} onChange={e => handleUpdateHome({ emailConfig: { ...homeContent.emailConfig, smtpPassword: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-purple-600" placeholder="••••••••••••" />
                   </div>
-                  <div className="pt-4">
-                     <button onClick={testEmailConfig} id="testEmailBtn" className="w-full bg-white text-black py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all">Probar Configuración</button>
+                  <div className="pt-4 flex gap-2">
+                     <button onClick={testEmailConfig} id="testEmailBtn" className="flex-1 bg-white text-black py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all">Probar Configuración</button>
+                     <button onClick={onPushToCloud} className="flex-1 bg-green-600 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-green-500 transition-all">Guardar Cambios</button>
                   </div>
                </div>
             </section>
