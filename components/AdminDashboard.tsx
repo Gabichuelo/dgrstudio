@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Pack, Booking, HomeContent, DaySchedule, Extra, Coupon, HourBono, DateOverride } from '../types';
 
 interface AdminDashboardProps {
@@ -18,8 +18,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [isAuthorized, setIsAuthorized] = useState(sessionStorage.getItem('admin_session') === 'true');
   const [passwordInput, setPasswordInput] = useState('');
+  
+  // Estado para seguridad de login
+  const [loginAttempts, setLoginAttempts] = useState(0);
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockTimer, setLockTimer] = useState(0);
+
   const [activeTab, setActiveTab] = useState<'calendar' | 'bookings' | 'marketing' | 'inventory' | 'schedule' | 'home' | 'config'>('calendar');
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  
+  // Efecto para el temporizador de bloqueo
+  useEffect(() => {
+    let interval: any;
+    if (isLocked && lockTimer > 0) {
+      interval = setInterval(() => {
+        setLockTimer((prev) => prev - 1);
+      }, 1000);
+    } else if (lockTimer === 0) {
+      setIsLocked(false);
+      setLoginAttempts(0);
+    }
+    return () => clearInterval(interval);
+  }, [isLocked, lockTimer]);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isLocked) return;
+
+    if (passwordInput === 'admin123') {
+      setIsAuthorized(true);
+      sessionStorage.setItem('admin_session', 'true');
+      setLoginAttempts(0);
+    } else {
+      const newAttempts = loginAttempts + 1;
+      setLoginAttempts(newAttempts);
+      if (newAttempts >= 3) {
+        setIsLocked(true);
+        setLockTimer(30); // 30 segundos de bloqueo
+      } else {
+        alert(`Contraseña incorrecta. Intentos restantes: ${3 - newAttempts}`);
+      }
+    }
+  };
   
   const getLocalDateString = (date: Date) => {
     const year = date.getFullYear();
@@ -56,6 +96,46 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Generador de enlace WhatsApp con confirmación de pago
+  const getWhatsAppLink = (booking: Booking) => {
+    if (!booking.customerPhone) return null;
+    const phone = booking.customerPhone.replace(/\D/g, ''); 
+    if (phone.length < 9) return null; 
+
+    const msg = `Hola ${booking.customerName}, confirmamos la recepción de tu pago. Tu sesión en ${homeContent.studioName} para el día ${booking.date} a las ${booking.startTime}:00h queda confirmada. ¡Te esperamos!`;
+    return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+  };
+
+  const testEmailConfig = async () => {
+     if(!homeContent.apiUrl || !homeContent.emailConfig.smtpUser || !homeContent.emailConfig.smtpPassword) {
+         alert("Faltan datos de configuración (API URL, Usuario SMTP o Contraseña)");
+         return;
+     }
+     
+     const btn = document.getElementById('testEmailBtn') as HTMLButtonElement;
+     if(btn) btn.innerText = "Enviando...";
+
+     try {
+       const res = await fetch(`${homeContent.apiUrl.replace(/\/$/, '')}/api/send-email`, {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+               to: homeContent.emailConfig.smtpUser, // Enviarse a sí mismo
+               subject: "Test de Configuración StreamPulse",
+               html: "<h1>¡Funciona!</h1><p>El sistema de emails está correctamente configurado.</p>",
+               config: homeContent.emailConfig
+           })
+       });
+       const data = await res.json();
+       if(data.success) alert("¡Email enviado con éxito! Revisa tu bandeja de entrada.");
+       else alert("Error al enviar: " + (data.error || "Desconocido"));
+     } catch (e) {
+       alert("Error de conexión con el servidor Backend. Verifica la API URL.");
+     } finally {
+        if(btn) btn.innerText = "Probar Configuración";
+     }
+  };
+
   const calendarDays = useMemo(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -68,13 +148,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return days;
   }, [currentMonth]);
 
+  const getPackName = (packId: string) => {
+    return packs.find(p => p.id === packId)?.name || 'Pack Desconocido';
+  };
+
   if (!isAuthorized) {
     return (
-      <div className="max-w-md mx-auto py-40 text-center">
+      <div className="max-w-md mx-auto py-40 text-center px-6">
         <h1 className="text-3xl font-orbitron font-bold mb-10 uppercase text-purple-600">Acceso Admin</h1>
-        <form onSubmit={(e) => { e.preventDefault(); if(passwordInput === 'admin123') { setIsAuthorized(true); sessionStorage.setItem('admin_session', 'true'); } else alert('Password Incorrecto'); }} className="space-y-5">
-          <input type="password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-6 py-5 text-center text-white outline-none focus:border-purple-600 text-lg font-mono" placeholder="PASSWORD" />
-          <button className="w-full bg-purple-600 py-5 rounded-2xl font-black uppercase text-[11px] tracking-widest text-white">Entrar</button>
+        <form onSubmit={handleLogin} className="space-y-5">
+          <input 
+            type="password" 
+            value={passwordInput} 
+            onChange={(e) => setPasswordInput(e.target.value)} 
+            disabled={isLocked}
+            className={`w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-6 py-5 text-center text-white outline-none focus:border-purple-600 text-lg font-mono transition-all ${isLocked ? 'opacity-50 cursor-not-allowed border-red-900' : ''}`} 
+            placeholder={isLocked ? `BLOQUEADO (${lockTimer}s)` : "PASSWORD"} 
+          />
+          <button 
+            disabled={isLocked}
+            className={`w-full py-5 rounded-2xl font-black uppercase text-[11px] tracking-widest text-white transition-all ${isLocked ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-500'}`}
+          >
+            {isLocked ? `Espera ${lockTimer}s` : 'Entrar'}
+          </button>
+          {isLocked && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest animate-pulse">Demasiados intentos fallidos</p>}
         </form>
       </div>
     );
@@ -128,8 +225,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <h3 className="text-[11px] font-black text-zinc-600 uppercase tracking-widest border-b border-zinc-800 pb-4">Eventos {selectedCalendarDate}</h3>
               {bookings.filter(b => b.date === selectedCalendarDate).length > 0 ? bookings.filter(b => b.date === selectedCalendarDate).map(b => (
                 <div key={b.id} className="p-4 bg-black border border-zinc-800 rounded-2xl space-y-3 shadow-xl hover:border-zinc-700 transition-all">
-                  <div className="text-[11px] font-bold text-white uppercase truncate">{b.customerName}</div>
-                  <div className="flex gap-2">
+                  <div className="flex justify-between items-start">
+                     <div className="text-[11px] font-bold text-white uppercase truncate">{b.customerName}</div>
+                     <div className="text-[9px] font-black text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded uppercase">{b.startTime}:00h</div>
+                  </div>
+                  <div className="text-[9px] text-zinc-400 font-medium uppercase tracking-wide">
+                     {b.date === 'COMPRA_BONO' ? 'Compra Bono Horas' : getPackName(b.packId)}
+                  </div>
+                  <div className="flex gap-2 mt-2">
                     {b.status === 'pending_verification' && <button onClick={() => handleConfirmBooking(b)} className="flex-1 bg-green-600 py-2 rounded-xl text-[8px] font-black uppercase text-white">Validar</button>}
                     <button onClick={() => handleDeleteBooking(b.id)} className="bg-zinc-800 px-3 py-2 rounded-xl text-white text-[8px] font-black uppercase hover:bg-red-600 transition-colors">Borrar</button>
                   </div>
@@ -146,24 +249,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <tr><th className="p-6">Cliente</th><th>Detalles</th><th>Importe</th><th>Estado</th><th className="text-right p-6">Acciones</th></tr>
             </thead>
             <tbody>
-              {[...bookings].sort((a,b) => b.createdAt - a.createdAt).map(b => (
-                <tr key={b.id} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-all">
-                  <td className="p-6">
-                    <div className="font-bold text-white uppercase">{b.customerName}</div>
-                    <div className="text-[8px] text-zinc-600 mt-1 font-black">{b.customerEmail}</div>
-                  </td>
-                  <td>
-                    <div className={`font-orbitron font-bold uppercase ${b.date === 'COMPRA_BONO' ? 'text-blue-500' : 'text-purple-500'}`}>{b.date === 'COMPRA_BONO' ? 'BONO' : b.date}</div>
-                    {b.date !== 'COMPRA_BONO' && <div className="text-[9px] text-zinc-500 font-black uppercase mt-1">{b.startTime}:00 ({b.duration}H)</div>}
-                  </td>
-                  <td className="font-orbitron font-bold text-white text-lg">{b.totalPrice}€</td>
-                  <td><span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${b.status === 'confirmed' ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}`}>{b.status}</span></td>
-                  <td className="p-6 text-right flex justify-end gap-2">
-                       {b.status === 'pending_verification' && <button onClick={() => handleConfirmBooking(b)} className="bg-green-600 text-white px-4 py-2 rounded-xl text-[8px] font-black uppercase shadow-lg hover:bg-green-500 transition-all">Validar</button>}
-                       <button onClick={() => handleDeleteBooking(b.id)} className="bg-zinc-800 text-zinc-500 px-4 py-2 rounded-xl text-[8px] font-black uppercase hover:bg-red-600 hover:text-white transition-all">Borrar</button>
-                  </td>
-                </tr>
-              ))}
+              {[...bookings].sort((a,b) => b.createdAt - a.createdAt).map(b => {
+                const waLink = getWhatsAppLink(b);
+                const packName = getPackName(b.packId);
+                return (
+                  <tr key={b.id} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-all">
+                    <td className="p-6">
+                      <div className="flex items-center gap-2">
+                          <div className="font-bold text-white uppercase">{b.customerName}</div>
+                          {waLink && (
+                              <a href={waLink} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-400" title="Confirmar Pago por WhatsApp">
+                                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+                              </a>
+                          )}
+                      </div>
+                      <div className="text-[8px] text-zinc-600 mt-1 font-black">{b.customerEmail}</div>
+                    </td>
+                    <td>
+                      <div className={`font-orbitron font-bold uppercase ${b.date === 'COMPRA_BONO' ? 'text-blue-500' : 'text-purple-500'}`}>{b.date === 'COMPRA_BONO' ? 'BONO' : b.date}</div>
+                      {b.date !== 'COMPRA_BONO' && (
+                         <div className="space-y-1 mt-1">
+                            <div className="text-[9px] text-zinc-500 font-black uppercase">{b.startTime}:00 ({b.duration}H)</div>
+                            <div className="text-[9px] text-zinc-300 font-bold uppercase bg-zinc-800 px-1.5 py-0.5 rounded w-fit">{packName}</div>
+                         </div>
+                      )}
+                    </td>
+                    <td className="font-orbitron font-bold text-white text-lg">{b.totalPrice}€</td>
+                    <td><span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${b.status === 'confirmed' ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}`}>{b.status}</span></td>
+                    <td className="p-6 text-right flex justify-end gap-2">
+                        {b.status === 'pending_verification' && <button onClick={() => handleConfirmBooking(b)} className="bg-green-600 text-white px-4 py-2 rounded-xl text-[8px] font-black uppercase shadow-lg hover:bg-green-500 transition-all">Validar</button>}
+                        <button onClick={() => handleDeleteBooking(b.id)} className="bg-zinc-800 text-zinc-500 px-4 py-2 rounded-xl text-[8px] font-black uppercase hover:bg-red-600 hover:text-white transition-all">Borrar</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -256,7 +375,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
              </div>
           </section>
 
-          <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] shadow-2xl">
+          <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl">
              <div className="flex justify-between items-center border-b border-zinc-800 pb-4 mb-6">
                 <h3 className="text-sm font-orbitron font-black uppercase text-white tracking-widest">Servicios Extra</h3>
                 <button onClick={() => handleUpdateHome({ extras: [...(homeContent.extras || []), { id: Math.random().toString(36).substr(2, 5), name: 'Extra', price: 5, icon: '✨' }] })} className="text-[9px] font-black text-blue-600 uppercase tracking-widest">+ Añadir</button>
@@ -274,6 +393,81 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 ))}
              </div>
+          </section>
+        </div>
+      )}
+
+      {/* HORARIOS */}
+      {activeTab === 'schedule' && (
+        <div className="grid lg:grid-cols-2 gap-10">
+          <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl">
+            <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 mb-6 tracking-widest">Horario Semanal</h3>
+            <div className="space-y-4">
+              {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((dayKey) => {
+                const day = (homeContent.availability as any)[dayKey] as DaySchedule;
+                const esDays: any = { monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miércoles', thursday: 'Jueves', friday: 'Viernes', saturday: 'Sábado', sunday: 'Domingo' };
+                return (
+                  <div key={dayKey} className="flex items-center gap-4 bg-black/40 border border-zinc-800 p-4 rounded-xl">
+                    <div className="w-24 text-[10px] font-black uppercase text-zinc-500 tracking-widest">{esDays[dayKey]}</div>
+                    <button 
+                      onClick={() => {
+                        const newAv = { ...homeContent.availability };
+                        (newAv as any)[dayKey].isOpen = !day.isOpen;
+                        handleUpdateHome({ availability: newAv });
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase ${day.isOpen ? 'bg-green-600/10 text-green-500' : 'bg-red-600/10 text-red-500'}`}
+                    >
+                      {day.isOpen ? 'Abierto' : 'Cerrado'}
+                    </button>
+                    {day.isOpen && (
+                      <div className="flex items-center gap-2 ml-auto">
+                        <input type="number" value={day.start} onChange={(e) => {
+                           const newAv = { ...homeContent.availability };
+                           (newAv as any)[dayKey].start = Number(e.target.value);
+                           handleUpdateHome({ availability: newAv });
+                        }} className="w-12 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-white text-center" />
+                        <span className="text-zinc-600">-</span>
+                        <input type="number" value={day.end} onChange={(e) => {
+                           const newAv = { ...homeContent.availability };
+                           (newAv as any)[dayKey].end = Number(e.target.value);
+                           handleUpdateHome({ availability: newAv });
+                        }} className="w-12 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-white text-center" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl">
+            <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 mb-6 tracking-widest">Excepciones y Festivos</h3>
+            <div className="mb-6 flex gap-2">
+               <input type="date" id="newOverrideDate" className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-white text-xs outline-none focus:border-purple-600" />
+               <button onClick={() => {
+                  const input = document.getElementById('newOverrideDate') as HTMLInputElement;
+                  if (input.value) {
+                    const overrides = [...homeContent.availability.overrides, { id: Math.random().toString(36).substr(2), date: input.value, isOpen: false }];
+                    handleUpdateHome({ availability: { ...homeContent.availability, overrides } });
+                    input.value = '';
+                  }
+               }} className="bg-purple-600 text-white px-4 rounded-xl text-[9px] font-black uppercase">Añadir Fecha</button>
+            </div>
+            <div className="space-y-3">
+              {homeContent.availability.overrides.map(ov => (
+                <div key={ov.id} className="flex items-center justify-between bg-black/40 border border-zinc-800 p-4 rounded-xl">
+                   <div>
+                     <div className="text-white font-bold text-xs">{ov.date}</div>
+                     <div className="text-[9px] text-red-500 font-black uppercase mt-1">{ov.isOpen ? 'Horario Especial' : 'Cerrado Todo el Día'}</div>
+                   </div>
+                   <button onClick={() => {
+                      const overrides = homeContent.availability.overrides.filter(x => x.id !== ov.id);
+                      handleUpdateHome({ availability: { ...homeContent.availability, overrides } });
+                   }} className="text-zinc-600 hover:text-red-500">✕</button>
+                </div>
+              ))}
+              {homeContent.availability.overrides.length === 0 && <p className="text-zinc-700 text-[9px] uppercase font-black text-center py-10">No hay excepciones configuradas</p>}
+            </div>
           </section>
         </div>
       )}
@@ -339,7 +533,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Revolut</span>
                       <button onClick={() => handleUpdateHome({ payments: { ...homeContent.payments, revolutEnabled: !homeContent.payments.revolutEnabled } })} className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase ${homeContent.payments.revolutEnabled ? 'bg-purple-600 text-white shadow-lg' : 'bg-zinc-800 text-zinc-500'}`}>{homeContent.payments.revolutEnabled ? 'Activo' : 'Inactivo'}</button>
                     </div>
-                    <input value={homeContent.payments.revolutTag} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, revolutTag: e.target.value } })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-purple-600" placeholder="@usuario" />
+                    <div className="grid grid-cols-2 gap-3">
+                        <input value={homeContent.payments.revolutTag} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, revolutTag: e.target.value } })} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-purple-600" placeholder="@usuario (Tag)" />
+                        <input value={homeContent.payments.revolutLink} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, revolutLink: e.target.value } })} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-blue-400 font-mono outline-none focus:border-blue-600" placeholder="https://revolut.me/..." />
+                    </div>
                   </div>
                   <div className="p-5 bg-black/40 rounded-2xl border border-zinc-800 space-y-3">
                     <div className="flex items-center justify-between">
@@ -353,6 +550,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl space-y-6">
                <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 tracking-widest">Emails (SMTP)</h3>
+               <div className="bg-blue-900/10 border border-blue-900/30 p-4 rounded-xl mb-4">
+                  <p className="text-[9px] text-blue-300 font-medium leading-relaxed">
+                    NOTA: El envío de emails requiere que el servidor backend (API URL) esté funcionando y configurado. Las credenciales de SMTP se envían de forma segura al servidor.
+                  </p>
+               </div>
                <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Servidor Host</label>
@@ -361,6 +563,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="space-y-2">
                     <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Email de Envío</label>
                     <input value={homeContent.emailConfig.smtpUser} onChange={e => handleUpdateHome({ emailConfig: { ...homeContent.emailConfig, smtpUser: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-purple-600" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Contraseña (App Password)</label>
+                    <input type="password" value={homeContent.emailConfig.smtpPassword || ''} onChange={e => handleUpdateHome({ emailConfig: { ...homeContent.emailConfig, smtpPassword: e.target.value } })} className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-purple-600" placeholder="••••••••••••" />
+                  </div>
+                  <div className="pt-4">
+                     <button onClick={testEmailConfig} id="testEmailBtn" className="w-full bg-white text-black py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all">Probar Configuración</button>
                   </div>
                </div>
             </section>
