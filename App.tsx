@@ -46,12 +46,10 @@ export function App() {
     if (savedHome) {
         try { 
             const parsed = JSON.parse(savedHome);
-            // Mezcla robusta: asegura que si faltan campos nuevos (como emailConfig) en el localStorage,
-            // se rellenen con los valores de INITIAL_HOME_CONTENT.
+            // Mezcla robusta:
             loadedHome = {
                 ...INITIAL_HOME_CONTENT,
                 ...parsed,
-                emailConfig: { ...INITIAL_HOME_CONTENT.emailConfig, ...(parsed.emailConfig || {}) },
                 payments: { ...INITIAL_HOME_CONTENT.payments, ...(parsed.payments || {}) },
                 availability: { ...INITIAL_HOME_CONTENT.availability, ...(parsed.availability || {}) }
             };
@@ -78,8 +76,7 @@ export function App() {
         if (result.homeContent) {
              updates.homeContent = { 
                 ...loadedHome, 
-                ...result.homeContent,
-                emailConfig: { ...loadedHome.emailConfig, ...(result.homeContent.emailConfig || {}) }
+                ...result.homeContent
             };
         }
         
