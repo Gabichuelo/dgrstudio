@@ -122,6 +122,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return packs.find(p => p.id === packId)?.name || 'Pack Desconocido';
   };
 
+  // Helper para obtener nombres de extras
+  const getExtrasNames = (ids: string[]) => {
+    if (!ids || ids.length === 0) return null;
+    return ids.map(id => homeContent.extras.find(e => e.id === id)?.name).filter(Boolean).join(', ');
+  };
+
   if (!isAuthorized) {
     return (
       <div className="max-w-md mx-auto py-40 text-center px-6">
@@ -163,8 +169,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           ))}
         </div>
       </header>
-
-      {/* --- CÓDIGO DE LAS PESTAÑAS ANTERIORES (CALENDAR, BOOKINGS, ETC) SE MANTIENE IGUAL HASTA CONFIG --- */}
       
       {activeTab === 'calendar' && (
         <div className="grid lg:grid-cols-4 gap-8">
@@ -204,6 +208,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="text-[9px] text-zinc-400 font-medium uppercase tracking-wide">
                      {b.date === 'COMPRA_BONO' ? 'Compra Bono Horas' : getPackName(b.packId)}
                   </div>
+                  
+                  {/* EXTRAS EN CALENDARIO */}
+                  {b.selectedExtrasIds && b.selectedExtrasIds.length > 0 && (
+                    <div className="text-[8px] text-zinc-500 font-black uppercase mt-1 tracking-widest border-t border-zinc-800 pt-2">
+                        + {getExtrasNames(b.selectedExtrasIds)}
+                    </div>
+                  )}
+
                   <div className="flex gap-2 mt-2">
                     {b.status === 'pending_verification' && <button onClick={() => handleConfirmBooking(b)} className="flex-1 bg-green-600 py-2 rounded-xl text-[8px] font-black uppercase text-white">Validar</button>}
                     <button onClick={() => handleDeleteBooking(b.id)} className="bg-zinc-800 px-3 py-2 rounded-xl text-white text-[8px] font-black uppercase hover:bg-red-600 transition-colors">Borrar</button>
@@ -224,6 +236,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {[...bookings].sort((a,b) => b.createdAt - a.createdAt).map(b => {
                 const waLink = getWhatsAppLink(b);
                 const packName = getPackName(b.packId);
+                const extrasText = getExtrasNames(b.selectedExtrasIds);
+
                 return (
                   <tr key={b.id} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-all">
                     <td className="p-6">
@@ -243,6 +257,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                          <div className="space-y-1 mt-1">
                             <div className="text-[9px] text-zinc-500 font-black uppercase">{b.startTime}:00 ({b.duration}H)</div>
                             <div className="text-[9px] text-zinc-300 font-bold uppercase bg-zinc-800 px-1.5 py-0.5 rounded w-fit">{packName}</div>
+                            {extrasText && (
+                                <div className="text-[8px] text-blue-400 font-bold uppercase tracking-wider mt-1">
+                                    + {extrasText}
+                                </div>
+                            )}
                          </div>
                       )}
                     </td>
