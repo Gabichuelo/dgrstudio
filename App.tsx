@@ -20,7 +20,6 @@ export function App() {
   const [preselectedPackId, setPreselectedPackId] = useState<string | null>(null);
 
   // Referencia mutable para mantener el estado "real" y actual accesible instantáneamente
-  // Esto soluciona el problema de que una función use datos viejos antes de un re-render
   const stateRef = useRef({ packs, bookings, homeContent });
 
   // Mantenemos la referencia sincronizada con el estado cada vez que cambia
@@ -38,9 +37,26 @@ export function App() {
     let loadedBookings: Booking[] = [];
     let loadedHome = INITIAL_HOME_CONTENT;
 
-    if (savedPacks) loadedPacks = JSON.parse(savedPacks);
-    if (savedBookings) loadedBookings = JSON.parse(savedBookings);
-    if (savedHome) loadedHome = JSON.parse(savedHome);
+    if (savedPacks) {
+        try { loadedPacks = JSON.parse(savedPacks); } catch(e) {}
+    }
+    if (savedBookings) {
+        try { loadedBookings = JSON.parse(savedBookings); } catch(e) {}
+    }
+    if (savedHome) {
+        try { 
+            const parsed = JSON.parse(savedHome);
+            // Mezcla robusta: asegura que si faltan campos nuevos (como emailConfig) en el localStorage,
+            // se rellenen con los valores de INITIAL_HOME_CONTENT.
+            loadedHome = {
+                ...INITIAL_HOME_CONTENT,
+                ...parsed,
+                emailConfig: { ...INITIAL_HOME_CONTENT.emailConfig, ...(parsed.emailConfig || {}) },
+                payments: { ...INITIAL_HOME_CONTENT.payments, ...(parsed.payments || {}) },
+                availability: { ...INITIAL_HOME_CONTENT.availability, ...(parsed.availability || {}) }
+            };
+        } catch(e) { console.error("Error leyendo configuración local", e); }
+    }
 
     setPacks(loadedPacks);
     setBookings(loadedBookings);
@@ -58,7 +74,14 @@ export function App() {
         const updates: any = {};
         if (result.packs) updates.packs = result.packs;
         if (result.bookings) updates.bookings = result.bookings;
-        if (result.homeContent) updates.homeContent = { ...loadedHome, ...result.homeContent };
+        // Al recibir del servidor, también hacemos merge seguro
+        if (result.homeContent) {
+             updates.homeContent = { 
+                ...loadedHome, 
+                ...result.homeContent,
+                emailConfig: { ...loadedHome.emailConfig, ...(result.homeContent.emailConfig || {}) }
+            };
+        }
         
         if (Object.keys(updates).length > 0) {
             if(updates.packs) setPacks(updates.packs);
@@ -98,35 +121,26 @@ export function App() {
 
   // Guardado centralizado ROBUSTO usando Refs
   const performSave = (updates: { packs?: Pack[], bookings?: Booking[], home?: HomeContent }) => {
-    // 1. Leemos del REF, no del estado, para garantizar que tenemos la versión más reciente
-    // incluso si React aún no ha hecho el re-render de una operación anterior (como en confirmBooking).
     const current = stateRef.current;
 
     const nextPacks = updates.packs || current.packs;
     const nextBookings = updates.bookings || current.bookings;
     const nextHome = updates.home || current.homeContent;
 
-    // 2. Actualizamos el estado de React (para que la UI cambie)
     if (updates.packs) setPacks(nextPacks);
     if (updates.bookings) setBookings(nextBookings);
     if (updates.home) setHomeContent(nextHome);
 
-    // 3. Persistencia Local
     if (updates.packs) localStorage.setItem('dj_packs', JSON.stringify(nextPacks));
     if (updates.bookings) localStorage.setItem('dj_bookings', JSON.stringify(nextBookings));
     if (updates.home) localStorage.setItem('dj_home', JSON.stringify(nextHome));
 
-    // 4. IMPORTANTE: Actualizamos la Ref manualmente AHORA MISMO.
-    // Esto permite que si llamamos a performSave dos veces seguidas (ej: confirmar bono + confirmar reserva),
-    // la segunda llamada ya "vea" los cambios de la primera.
     stateRef.current = { packs: nextPacks, bookings: nextBookings, homeContent: nextHome };
 
-    // 5. Sincronizamos con la nube
     syncToCloud(nextPacks, nextBookings, nextHome);
   };
 
   const handleAddBooking = (newBooking: Booking) => {
-    // Usamos el ref para obtener los datos más frescos al añadir
     const currentHome = stateRef.current.homeContent;
     const currentBookings = stateRef.current.bookings;
 
@@ -147,9 +161,6 @@ export function App() {
     }
 
     performSave({ bookings: updatedBookings, home: updatedHome });
-    // ELIMINADO: setView('home'); 
-    // Mantenemos la vista actual para que BookingView muestre la pantalla de éxito.
-    // BookingView llamará a setView('home') cuando el usuario pulse "Entendido".
     setPreselectedPackId(null);
   };
 
@@ -193,7 +204,6 @@ export function App() {
             packs={packs} 
             bookings={bookings} 
             homeContent={homeContent}
-            // Pasamos funciones que delegan en performSave
             onUpdatePacks={(p) => performSave({ packs: p })}
             onUpdateHome={(h) => performSave({ home: h })}
             onUpdateBookings={(b) => performSave({ bookings: b })}
