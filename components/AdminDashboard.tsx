@@ -122,10 +122,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return packs.find(p => p.id === packId)?.name || 'Pack Desconocido';
   };
 
-  // Helper para obtener nombres de extras
-  const getExtrasNames = (ids: string[]) => {
-    if (!ids || ids.length === 0) return null;
-    return ids.map(id => homeContent.extras.find(e => e.id === id)?.name).filter(Boolean).join(', ');
+  // Helper ROBUSTO para obtener nombres de extras
+  const getExtrasList = (ids: string[]) => {
+    if (!ids || ids.length === 0) return [];
+    return ids.map(id => {
+        const extra = homeContent.extras.find(e => e.id === id);
+        return extra ? extra.name : `Extra ID: ${id}`;
+    });
   };
 
   if (!isAuthorized) {
@@ -209,14 +212,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                      {b.date === 'COMPRA_BONO' ? 'Compra Bono Horas' : getPackName(b.packId)}
                   </div>
                   
-                  {/* EXTRAS EN CALENDARIO */}
+                  {/* EXTRAS EN CALENDARIO (MEJORADO VISUALMENTE) */}
                   {b.selectedExtrasIds && b.selectedExtrasIds.length > 0 && (
-                    <div className="text-[8px] text-zinc-500 font-black uppercase mt-1 tracking-widest border-t border-zinc-800 pt-2">
-                        + {getExtrasNames(b.selectedExtrasIds)}
+                    <div className="mt-2 flex flex-wrap gap-1">
+                        {getExtrasList(b.selectedExtrasIds).map((extraName, i) => (
+                             <span key={i} className="px-2 py-1 bg-pink-500/10 border border-pink-500/30 text-pink-400 text-[8px] font-black uppercase rounded-md tracking-wider">
+                                + {extraName}
+                             </span>
+                        ))}
                     </div>
                   )}
 
-                  <div className="flex gap-2 mt-2">
+                  <div className="flex gap-2 mt-2 pt-2 border-t border-zinc-800/50">
                     {b.status === 'pending_verification' && <button onClick={() => handleConfirmBooking(b)} className="flex-1 bg-green-600 py-2 rounded-xl text-[8px] font-black uppercase text-white">Validar</button>}
                     <button onClick={() => handleDeleteBooking(b.id)} className="bg-zinc-800 px-3 py-2 rounded-xl text-white text-[8px] font-black uppercase hover:bg-red-600 transition-colors">Borrar</button>
                   </div>
@@ -230,13 +237,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
           <table className="w-full text-left text-[11px]">
             <thead className="bg-white/5 font-black uppercase text-zinc-600 tracking-widest border-b border-zinc-800">
-              <tr><th className="p-6">Cliente</th><th>Detalles</th><th>Importe</th><th>Estado</th><th className="text-right p-6">Acciones</th></tr>
+              <tr><th className="p-6">Cliente</th><th>Detalles & Extras</th><th>Importe</th><th>Estado</th><th className="text-right p-6">Acciones</th></tr>
             </thead>
             <tbody>
               {[...bookings].sort((a,b) => b.createdAt - a.createdAt).map(b => {
                 const waLink = getWhatsAppLink(b);
                 const packName = getPackName(b.packId);
-                const extrasText = getExtrasNames(b.selectedExtrasIds);
+                const extras = getExtrasList(b.selectedExtrasIds);
 
                 return (
                   <tr key={b.id} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-all">
@@ -257,9 +264,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                          <div className="space-y-1 mt-1">
                             <div className="text-[9px] text-zinc-500 font-black uppercase">{b.startTime}:00 ({b.duration}H)</div>
                             <div className="text-[9px] text-zinc-300 font-bold uppercase bg-zinc-800 px-1.5 py-0.5 rounded w-fit">{packName}</div>
-                            {extrasText && (
-                                <div className="text-[8px] text-blue-400 font-bold uppercase tracking-wider mt-1">
-                                    + {extrasText}
+                            {extras.length > 0 && (
+                                <div className="mt-2 flex flex-col gap-1">
+                                    {extras.map((ex, i) => (
+                                        <div key={i} className="text-[8px] text-pink-400 font-black uppercase tracking-wider flex items-center gap-1">
+                                            <span>•</span> {ex}
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                          </div>
