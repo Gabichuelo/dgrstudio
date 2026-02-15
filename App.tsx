@@ -18,6 +18,8 @@ export function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'idle'>('idle');
   const [preselectedPackId, setPreselectedPackId] = useState<string | null>(null);
+  
+  const [successBooking, setSuccessBooking] = useState<Booking | null>(null);
 
   // Referencia mutable para mantener el estado "real" y actual accesible instantáneamente
   const stateRef = useRef({ packs, bookings, homeContent });
@@ -27,7 +29,7 @@ export function App() {
     stateRef.current = { packs, bookings, homeContent };
   }, [packs, bookings, homeContent]);
 
-  // Cargamos datos iniciales
+  // Cargamos datos iniciales y comprobamos retornos de pagos
   useEffect(() => {
     const savedPacks = localStorage.getItem('dj_packs');
     const savedBookings = localStorage.getItem('dj_bookings');
@@ -46,7 +48,6 @@ export function App() {
     if (savedHome) {
         try { 
             const parsed = JSON.parse(savedHome);
-            // Mezcla robusta:
             loadedHome = {
                 ...INITIAL_HOME_CONTENT,
                 ...parsed,
@@ -60,24 +61,18 @@ export function App() {
     setBookings(loadedBookings);
     setHomeContent(loadedHome);
     
-    // Actualizamos la ref inmediatamente tras la carga inicial
     stateRef.current = { packs: loadedPacks, bookings: loadedBookings, homeContent: loadedHome };
 
+    // Sincronización inicial
     const initialUrl = loadedHome.apiUrl || INITIAL_HOME_CONTENT.apiUrl;
-    
-    // Sincronización inicial con el servidor
     fetch(`${initialUrl.replace(/\/$/, '')}/api/sync`)
       .then(res => res.json())
       .then(result => {
         const updates: any = {};
         if (result.packs) updates.packs = result.packs;
         if (result.bookings) updates.bookings = result.bookings;
-        // Al recibir del servidor, también hacemos merge seguro
         if (result.homeContent) {
-             updates.homeContent = { 
-                ...loadedHome, 
-                ...result.homeContent
-            };
+             updates.homeContent = { ...loadedHome, ...result.homeContent };
         }
         
         if (Object.keys(updates).length > 0) {
@@ -88,6 +83,63 @@ export function App() {
         }
       })
       .catch(() => setServerStatus('offline'));
+
+    // CHEQUEO DE RETORNO DE MOLLIE
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment_return') === 'true') {
+        const pendingJson = sessionStorage.getItem('pending_mollie_booking');
+        if (pendingJson) {
+            try {
+                const booking = JSON.parse(pendingJson);
+                // Añadir a bookings si no existe
+                const exists = loadedBookings.some(b => b.id === booking.id);
+                if (!exists) {
+                    const newBookingsList = [...loadedBookings, booking];
+                    setBookings(newBookingsList);
+                    localStorage.setItem('dj_bookings', JSON.stringify(newBookingsList));
+                    
+                    // Si es un bono, actualizar saldo de horas si aplica (aunque en compra de bono se crea uno nuevo)
+                    if (booking.date === 'COMPRA_BONO') {
+                        // Crear bono en homeContent
+                        const newBono = {
+                            id: Math.random().toString(36).substr(2, 5),
+                            code: `BONO-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+                            customerName: booking.customerName,
+                            totalHours: booking.duration,
+                            remainingHours: booking.duration,
+                            isActive: true
+                        };
+                        const updatedHome = { ...loadedHome, hourBonos: [...(loadedHome.hourBonos || []), newBono] };
+                        setHomeContent(updatedHome);
+                        localStorage.setItem('dj_home', JSON.stringify(updatedHome));
+                        syncToCloud(loadedPacks, newBookingsList, updatedHome);
+                    } else {
+                        // Si es uso de bono
+                        if (booking.appliedBonoCode) {
+                             const bonoIdx = (loadedHome.hourBonos || []).findIndex(b => b.code === booking.appliedBonoCode);
+                             if (bonoIdx !== -1) {
+                                const updatedBonos = [...loadedHome.hourBonos];
+                                updatedBonos[bonoIdx] = { ...updatedBonos[bonoIdx], remainingHours: Math.max(0, updatedBonos[bonoIdx].remainingHours - booking.duration) };
+                                const updatedHome = { ...loadedHome, hourBonos: updatedBonos };
+                                setHomeContent(updatedHome);
+                                localStorage.setItem('dj_home', JSON.stringify(updatedHome));
+                                syncToCloud(loadedPacks, newBookingsList, updatedHome);
+                             } else {
+                                syncToCloud(loadedPacks, newBookingsList, loadedHome);
+                             }
+                        } else {
+                             syncToCloud(loadedPacks, newBookingsList, loadedHome);
+                        }
+                    }
+
+                    setSuccessBooking(booking);
+                    setView('booking');
+                    sessionStorage.removeItem('pending_mollie_booking');
+                    window.history.replaceState({}, '', window.location.pathname);
+                }
+            } catch (e) { console.error("Error procesando retorno pago", e); }
+        }
+    }
   }, []);
 
   // Función de sincronización con la nube
@@ -116,7 +168,6 @@ export function App() {
     }
   };
 
-  // Guardado centralizado ROBUSTO usando Refs
   const performSave = (updates: { packs?: Pack[], bookings?: Booking[], home?: HomeContent }) => {
     const current = stateRef.current;
 
@@ -194,6 +245,7 @@ export function App() {
                 onSubmit={handleAddBooking} 
                 onReturnHome={() => setView('home')}
                 initialPackId={preselectedPackId} 
+                initialSuccessBooking={successBooking}
             />
         )}
         {view === 'admin' && (
