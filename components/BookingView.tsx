@@ -37,7 +37,7 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success'>('idle');
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success'>('idle');
   const [lastPaymentMethod, setLastPaymentMethod] = useState<string | null>(null);
   const [lastBooking, setLastBooking] = useState<Booking | null>(null);
 
@@ -140,9 +140,7 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
     setSelectedExtrasIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
-  // Genera el enlace de WhatsApp para enviar al dueño del estudio
   const getStudioWhatsAppLink = (booking: Booking) => {
-    // Usamos el teléfono de Bizum como contacto del estudio si no hay otro definido
     const studioPhone = homeContent.payments.bizumPhone.replace(/\D/g, ''); 
     if (!studioPhone) return null;
 
@@ -158,10 +156,51 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
     return `https://wa.me/34${studioPhone}?text=${encodeURIComponent(text)}`;
   };
 
-  const handleFinalSubmit = (method: 'bizum' | 'revolut' | 'mollie' | 'bono') => {
+  const handleFinalSubmit = async (method: 'bizum' | 'revolut' | 'mollie' | 'bono') => {
     if (bookingMode === 'session' && (selectedHour === null || errorMsg)) return;
     if (bookingMode === 'bono' && (!customerName || !customerEmail)) return;
     
+    // Si el método es Mollie, iniciamos el proceso de redirección
+    if (method === 'mollie') {
+      try {
+        setPaymentStatus('processing');
+        const apiUrl = homeContent.apiUrl || 'https://estudio-dj-api-2.onrender.com';
+        
+        const description = bookingMode === 'bono' 
+          ? `Bono ${bonoSize} Horas - ${customerName}`
+          : `Reserva ${selectedDate} ${selectedPack.name} - ${customerName}`;
+
+        // Llamada al backend para crear el pago
+        const response = await fetch(`${apiUrl.replace(/\/$/, '')}/api/create-payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: totalPrice,
+            description: description,
+            redirectUrl: window.location.href // Volver a la misma página
+          })
+        });
+
+        const data = await response.json();
+        
+        if (data.checkoutUrl) {
+          // IMPORTANTE: Redirigir al usuario a la pasarela de Mollie
+          window.location.href = data.checkoutUrl;
+          return; // Detenemos la ejecución aquí, la página cambiará
+        } else {
+          alert('Error al iniciar el pago: ' + (data.error || 'Error desconocido'));
+          setPaymentStatus('idle');
+          return;
+        }
+      } catch (error) {
+        console.error(error);
+        alert('Error de conexión con el servidor de pagos.');
+        setPaymentStatus('idle');
+        return;
+      }
+    }
+
+    // Lógica para el resto de métodos (Bizum, Revolut, Bono) que son "Offline/Manual"
     const newBooking: Booking = {
       id: Math.random().toString(36).substr(2, 9).toUpperCase(),
       date: bookingMode === 'bono' ? 'COMPRA_BONO' : selectedDate,
@@ -173,8 +212,8 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
       customerEmail,
       customerPhone,
       totalPrice,
-      status: (method === 'mollie' || method === 'bono') ? 'confirmed' : 'pending_verification',
-      paymentMethod: method === 'mollie' || method === 'bono' ? method : (method === 'revolut' ? 'revolut' : 'bizum'),
+      status: (method === 'bono') ? 'confirmed' : 'pending_verification',
+      paymentMethod: method === 'revolut' ? 'revolut' : 'bizum',
       appliedCouponCode: appliedCoupon?.code,
       appliedBonoCode: appliedBono?.code,
       createdAt: Date.now()
@@ -185,6 +224,16 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
     setLastPaymentMethod(method);
     setPaymentStatus('success');
   };
+
+  if (paymentStatus === 'processing') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] animate-pulse">
+        <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mb-6"></div>
+        <h2 className="text-xl font-orbitron font-bold uppercase text-white tracking-widest">Conectando con Pasarela Segura...</h2>
+        <p className="text-zinc-500 text-xs mt-2 uppercase font-black">Serás redirigido en unos segundos</p>
+      </div>
+    );
+  }
 
   if (paymentStatus === 'success' && lastBooking) {
     const isManualPayment = lastPaymentMethod === 'bizum' || lastPaymentMethod === 'revolut';
@@ -420,7 +469,7 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
              <>
                {homeContent.payments.bizumEnabled && <button onClick={() => handleFinalSubmit('bizum')} disabled={!customerName || (bookingMode === 'session' && !selectedHour)} className="w-full bg-[#00AAFF] text-white py-5 rounded-2xl font-black text-[12px] uppercase shadow-2xl disabled:opacity-20 transform hover:scale-105 transition-all">Pagar con Bizum</button>}
                {homeContent.payments.revolutEnabled && <button onClick={() => handleFinalSubmit('revolut')} disabled={!customerName || (bookingMode === 'session' && !selectedHour)} className="w-full bg-white text-black py-5 rounded-2xl font-black text-[12px] uppercase shadow-2xl disabled:opacity-20 transform hover:scale-105 transition-all">Pagar con Revolut</button>}
-               {homeContent.payments.mollieEnabled && <button onClick={() => handleFinalSubmit('mollie')} disabled={!customerName || (bookingMode === 'session' && !selectedHour)} className="w-full bg-purple-600 text-white py-5 rounded-2xl font-black text-[12px] uppercase shadow-2xl disabled:opacity-20 transform hover:scale-105 transition-all">Pago con Tarjeta</button>}
+               {homeContent.payments.mollieEnabled && <button onClick={() => handleFinalSubmit('mollie')} disabled={!customerName || (bookingMode === 'session' && !selectedHour)} className="w-full bg-purple-600 text-white py-5 rounded-2xl font-black text-[12px] uppercase shadow-2xl disabled:opacity-20 transform hover:scale-105 transition-all">{paymentStatus === 'processing' ? 'Procesando...' : 'Pago con Tarjeta'}</button>}
              </>
            )}
            <p className="text-[7px] text-zinc-700 uppercase font-black text-center tracking-[0.2em] mt-2">Reserva segura. Al continuar aceptas las políticas de uso.</p>
