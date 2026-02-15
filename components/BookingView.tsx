@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Pack, Booking, HomeContent, DaySchedule, Extra, Coupon, HourBono } from '../types';
 
@@ -197,7 +198,7 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
           ? `Bono ${bonoSize} Horas - ${customerName}`
           : `Reserva ${selectedDate} ${selectedPack.name} - ${customerName}`;
 
-        // Guardamos la reserva pendiente en SessionStorage antes de salir de la web
+        // Guardamos la reserva pendiente temporalmente
         sessionStorage.setItem('pending_mollie_booking', JSON.stringify(newBooking));
 
         // URL actual limpia + parámetro de retorno
@@ -216,11 +217,13 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
 
         const data = await response.json();
         
-        if (data.checkoutUrl) {
+        if (data.checkoutUrl && data.paymentId) {
+          // SEGURIDAD: Guardamos el Payment ID real de Mollie para verificarlo luego
+          sessionStorage.setItem('mollie_payment_id', data.paymentId);
           window.location.href = data.checkoutUrl;
           return;
         } else {
-          alert('Error al iniciar el pago: ' + (data.error || 'Error desconocido'));
+          alert('Error al iniciar el pago: ' + (data.error || 'No se recibió ID de pago'));
           setPaymentStatus('idle');
           return;
         }
@@ -290,7 +293,7 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
                 </>
             ) : (
                 <p className="text-zinc-400 text-lg font-light leading-relaxed">
-                    ¡Tu pago se ha recibido correctamente! Te esperamos en el estudio.
+                    ¡Tu pago se ha recibido y verificado correctamente! Te esperamos en el estudio.
                 </p>
             )}
 
