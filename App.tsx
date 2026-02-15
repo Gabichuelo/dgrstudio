@@ -84,62 +84,88 @@ export function App() {
       })
       .catch(() => setServerStatus('offline'));
 
-    // CHEQUEO DE RETORNO DE MOLLIE
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('payment_return') === 'true') {
-        const pendingJson = sessionStorage.getItem('pending_mollie_booking');
-        if (pendingJson) {
-            try {
-                const booking = JSON.parse(pendingJson);
-                // Añadir a bookings si no existe
-                const exists = loadedBookings.some(b => b.id === booking.id);
-                if (!exists) {
-                    const newBookingsList = [...loadedBookings, booking];
-                    setBookings(newBookingsList);
-                    localStorage.setItem('dj_bookings', JSON.stringify(newBookingsList));
+    // CHEQUEO DE RETORNO DE MOLLIE CON VERIFICACIÓN DE SERVIDOR (SEGURIDAD)
+    const checkPaymentVerification = async () => {
+        const params = new URLSearchParams(window.location.search);
+        
+        if (params.get('payment_return') === 'true') {
+            const pendingJson = sessionStorage.getItem('pending_mollie_booking');
+            const paymentId = sessionStorage.getItem('mollie_payment_id');
+
+            if (pendingJson && paymentId) {
+                try {
+                    // LLAMADA DE VERIFICACIÓN AL SERVIDOR
+                    const apiUrl = loadedHome.apiUrl || INITIAL_HOME_CONTENT.apiUrl;
+                    const verifyResponse = await fetch(`${apiUrl.replace(/\/$/, '')}/api/verify-payment`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ paymentId })
+                    });
                     
-                    // Si es un bono, actualizar saldo de horas si aplica (aunque en compra de bono se crea uno nuevo)
-                    if (booking.date === 'COMPRA_BONO') {
-                        // Crear bono en homeContent
-                        const newBono = {
-                            id: Math.random().toString(36).substr(2, 5),
-                            code: `BONO-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
-                            customerName: booking.customerName,
-                            totalHours: booking.duration,
-                            remainingHours: booking.duration,
-                            isActive: true
-                        };
-                        const updatedHome = { ...loadedHome, hourBonos: [...(loadedHome.hourBonos || []), newBono] };
-                        setHomeContent(updatedHome);
-                        localStorage.setItem('dj_home', JSON.stringify(updatedHome));
-                        syncToCloud(loadedPacks, newBookingsList, updatedHome);
-                    } else {
-                        // Si es uso de bono
-                        if (booking.appliedBonoCode) {
-                             const bonoIdx = (loadedHome.hourBonos || []).findIndex(b => b.code === booking.appliedBonoCode);
-                             if (bonoIdx !== -1) {
-                                const updatedBonos = [...loadedHome.hourBonos];
-                                updatedBonos[bonoIdx] = { ...updatedBonos[bonoIdx], remainingHours: Math.max(0, updatedBonos[bonoIdx].remainingHours - booking.duration) };
-                                const updatedHome = { ...loadedHome, hourBonos: updatedBonos };
+                    const verifyData = await verifyResponse.json();
+
+                    // SOLO SI EL SERVIDOR DICE 'paid' GUARDAMOS LA RESERVA
+                    if (verifyData.status === 'paid') {
+                        const booking = JSON.parse(pendingJson);
+                        // Añadir a bookings si no existe
+                        const exists = loadedBookings.some(b => b.id === booking.id);
+                        if (!exists) {
+                            const newBookingsList = [...loadedBookings, booking];
+                            setBookings(newBookingsList);
+                            localStorage.setItem('dj_bookings', JSON.stringify(newBookingsList));
+                            
+                            // Si es un bono, actualizar saldo de horas si aplica
+                            if (booking.date === 'COMPRA_BONO') {
+                                const newBono = {
+                                    id: Math.random().toString(36).substr(2, 5),
+                                    code: `BONO-${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
+                                    customerName: booking.customerName,
+                                    totalHours: booking.duration,
+                                    remainingHours: booking.duration,
+                                    isActive: true
+                                };
+                                const updatedHome = { ...loadedHome, hourBonos: [...(loadedHome.hourBonos || []), newBono] };
                                 setHomeContent(updatedHome);
                                 localStorage.setItem('dj_home', JSON.stringify(updatedHome));
                                 syncToCloud(loadedPacks, newBookingsList, updatedHome);
-                             } else {
-                                syncToCloud(loadedPacks, newBookingsList, loadedHome);
-                             }
-                        } else {
-                             syncToCloud(loadedPacks, newBookingsList, loadedHome);
-                        }
-                    }
+                            } else {
+                                if (booking.appliedBonoCode) {
+                                     const bonoIdx = (loadedHome.hourBonos || []).findIndex(b => b.code === booking.appliedBonoCode);
+                                     if (bonoIdx !== -1) {
+                                        const updatedBonos = [...loadedHome.hourBonos];
+                                        updatedBonos[bonoIdx] = { ...updatedBonos[bonoIdx], remainingHours: Math.max(0, updatedBonos[bonoIdx].remainingHours - booking.duration) };
+                                        const updatedHome = { ...loadedHome, hourBonos: updatedBonos };
+                                        setHomeContent(updatedHome);
+                                        localStorage.setItem('dj_home', JSON.stringify(updatedHome));
+                                        syncToCloud(loadedPacks, newBookingsList, updatedHome);
+                                     } else {
+                                        syncToCloud(loadedPacks, newBookingsList, loadedHome);
+                                     }
+                                } else {
+                                     syncToCloud(loadedPacks, newBookingsList, loadedHome);
+                                }
+                            }
 
-                    setSuccessBooking(booking);
-                    setView('booking');
+                            setSuccessBooking(booking);
+                            setView('booking');
+                        }
+                    } else {
+                        alert(`El pago no se ha completado correctamente. Estado: ${verifyData.status}`);
+                    }
+                } catch (e) { 
+                    console.error("Error verificando pago", e); 
+                    alert("Error verificando el pago con el servidor.");
+                } finally {
+                    // Limpiamos la sesión tanto si fue bien como si falló para evitar bucles
                     sessionStorage.removeItem('pending_mollie_booking');
+                    sessionStorage.removeItem('mollie_payment_id');
                     window.history.replaceState({}, '', window.location.pathname);
                 }
-            } catch (e) { console.error("Error procesando retorno pago", e); }
+            }
         }
-    }
+    };
+
+    checkPaymentVerification();
   }, []);
 
   // Función de sincronización con la nube
