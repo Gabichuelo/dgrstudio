@@ -146,6 +146,17 @@ export function App() {
                                 }
                             }
 
+                            // ENVIAR EMAIL DE NOTIFICACIÓN (RESEND)
+                            fetch(`${apiUrl.replace(/\/$/, '')}/api/notify`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    cliente: booking.customerName,
+                                    servicio: booking.date === 'COMPRA_BONO' ? 'Compra de Bono (Mollie)' : 'Reserva Online (Mollie)',
+                                    fecha: booking.date
+                                })
+                            }).catch(err => console.error("Error enviando email", err));
+
                             setSuccessBooking(booking);
                             setView('booking');
                         }
@@ -156,7 +167,7 @@ export function App() {
                     console.error("Error verificando pago", e); 
                     alert("Error verificando el pago con el servidor.");
                 } finally {
-                    // Limpiamos la sesión tanto si fue bien como si falló para evitar bucles
+                    // Limpiamos la sesión
                     sessionStorage.removeItem('pending_mollie_booking');
                     sessionStorage.removeItem('mollie_payment_id');
                     window.history.replaceState({}, '', window.location.pathname);
