@@ -19,7 +19,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isAuthorized, setIsAuthorized] = useState(sessionStorage.getItem('admin_session') === 'true');
   const [passwordInput, setPasswordInput] = useState('');
   
-  // Estado para seguridad de login
+  // Seguridad de Login
   const [loginAttempts, setLoginAttempts] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
   const [lockTimer, setLockTimer] = useState(0);
@@ -27,7 +27,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'calendar' | 'bookings' | 'marketing' | 'inventory' | 'schedule' | 'home' | 'config'>('calendar');
   const [currentMonth, setCurrentMonth] = useState(new Date());
   
-  // Efecto para el temporizador de bloqueo
   useEffect(() => {
     let interval: any;
     if (isLocked && lockTimer > 0) {
@@ -54,7 +53,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setLoginAttempts(newAttempts);
       if (newAttempts >= 3) {
         setIsLocked(true);
-        setLockTimer(30); // 30 segundos de bloqueo
+        setLockTimer(30);
       } else {
         alert(`Contraseña incorrecta. Intentos restantes: ${3 - newAttempts}`);
       }
@@ -96,13 +95,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Generador de enlace WhatsApp con confirmación de pago
+  const handleTestEmail = async () => {
+    const apiUrl = homeContent.apiUrl || 'https://estudio-dj-api-2.onrender.com';
+    const button = document.getElementById('btn-test-email') as HTMLButtonElement;
+    if(button) { button.disabled = true; button.innerText = "Conectando..."; }
+
+    try {
+        const res = await fetch(`${apiUrl.replace(/\/$/, '')}/api/notify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                cliente: 'Admin Dashboard',
+                servicio: 'PRUEBA DE CONEXIÓN EMAIL',
+                fecha: new Date().toLocaleDateString()
+            })
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            alert('✅ ÉXITO: El servidor ha enviado el email correctamente.\n\nRevisa tu bandeja de entrada (y la carpeta de Spam/Promociones).');
+        } else {
+            alert(`⚠️ ERROR DEL SERVIDOR:\n${data.message || data.error || 'Respuesta desconocida'}\n\nRevisa que la variable RESEND_API_KEY esté configurada en el servidor.`);
+        }
+    } catch (e: any) {
+        alert('❌ ERROR DE RED O URL INCORRECTA:\n' + e.message + '\n\nVerifica que la "URL de la API" en esta misma pantalla es la correcta.');
+    } finally {
+        if(button) { button.disabled = false; button.innerText = "Enviar Email de Prueba"; }
+    }
+  };
+
   const getWhatsAppLink = (booking: Booking) => {
     if (!booking.customerPhone) return null;
     const phone = booking.customerPhone.replace(/\D/g, ''); 
     if (phone.length < 9) return null; 
-
-    const msg = `Hola ${booking.customerName}, confirmamos la recepción de tu pago. Tu sesión en ${homeContent.studioName} para el día ${booking.date} a las ${booking.startTime}:00h queda confirmada. ¡Te esperamos!`;
+    const msg = `Hola ${booking.customerName}, confirmamos la recepción de tu pago. Tu sesión para el día ${booking.date} a las ${booking.startTime}:00h queda confirmada.`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
   };
 
@@ -122,12 +148,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return packs.find(p => p.id === packId)?.name || 'Pack Desconocido';
   };
 
-  // Helper ROBUSTO para obtener nombres de extras
-  const getExtrasList = (ids: string[]) => {
-    if (!ids || ids.length === 0) return [];
+  const getExtrasDisplay = (ids: string[] | undefined) => {
+    if (!ids || !Array.isArray(ids) || ids.length === 0) return null;
     return ids.map(id => {
-        const extra = homeContent.extras.find(e => e.id === id);
-        return extra ? extra.name : `Extra ID: ${id}`;
+      const extra = homeContent.extras?.find(e => e.id === id);
+      return extra ? extra.name : `Extra ID:${id}`;
     });
   };
 
@@ -150,7 +175,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             {isLocked ? `Espera ${lockTimer}s` : 'Entrar'}
           </button>
-          {isLocked && <p className="text-red-500 text-[10px] font-bold uppercase tracking-widest animate-pulse">Demasiados intentos fallidos</p>}
         </form>
       </div>
     );
@@ -173,6 +197,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </header>
       
+      {/* CALENDARIO */}
       {activeTab === 'calendar' && (
         <div className="grid lg:grid-cols-4 gap-8">
            <div className="lg:col-span-3 bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-10 shadow-2xl">
@@ -211,21 +236,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="text-[9px] text-zinc-400 font-medium uppercase tracking-wide">
                      {b.date === 'COMPRA_BONO' ? 'Compra Bono Horas' : getPackName(b.packId)}
                   </div>
-                  
-                  {/* EXTRAS EN CALENDARIO (MEJORADO VISUALMENTE) */}
                   {b.selectedExtrasIds && b.selectedExtrasIds.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                        {getExtrasList(b.selectedExtrasIds).map((extraName, i) => (
-                             <span key={i} className="px-2 py-1 bg-pink-500/10 border border-pink-500/30 text-pink-400 text-[8px] font-black uppercase rounded-md tracking-wider">
-                                + {extraName}
-                             </span>
-                        ))}
+                    <div className="flex flex-wrap gap-1 mt-2 p-2 bg-pink-500/5 rounded-lg border border-pink-500/20">
+                         {getExtrasDisplay(b.selectedExtrasIds)?.map((ex, i) => (
+                           <span key={i} className="text-[8px] font-black text-pink-500 uppercase">+ {ex}</span>
+                         ))}
                     </div>
                   )}
-
                   <div className="flex gap-2 mt-2 pt-2 border-t border-zinc-800/50">
-                    {b.status === 'pending_verification' && <button onClick={() => handleConfirmBooking(b)} className="flex-1 bg-green-600 py-2 rounded-xl text-[8px] font-black uppercase text-white">Validar</button>}
-                    <button onClick={() => handleDeleteBooking(b.id)} className="bg-zinc-800 px-3 py-2 rounded-xl text-white text-[8px] font-black uppercase hover:bg-red-600 transition-colors">Borrar</button>
+                    {b.status === 'pending_verification' && <button onClick={() => handleConfirmBooking(b)} className="flex-1 bg-green-600 py-2 rounded-xl text-[8px] font-black uppercase text-white shadow-lg">Validar</button>}
+                    <button onClick={() => handleDeleteBooking(b.id)} className="bg-zinc-800 px-3 py-2 rounded-xl text-white text-[8px] font-black uppercase hover:bg-red-600">Borrar</button>
                   </div>
                 </div>
               )) : <p className="text-center py-20 text-[9px] uppercase text-zinc-700 font-black">Sin eventos</p>}
@@ -233,53 +253,54 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* RESERVAS */}
       {activeTab === 'bookings' && (
         <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
           <table className="w-full text-left text-[11px]">
             <thead className="bg-white/5 font-black uppercase text-zinc-600 tracking-widest border-b border-zinc-800">
-              <tr><th className="p-6">Cliente</th><th>Detalles & Extras</th><th>Importe</th><th>Estado</th><th className="text-right p-6">Acciones</th></tr>
+              <tr>
+                <th className="p-6">Cliente</th>
+                <th>Detalles</th>
+                <th>Extras</th>
+                <th>Importe</th>
+                <th>Estado</th>
+                <th className="text-right p-6">Acciones</th>
+              </tr>
             </thead>
             <tbody>
               {[...bookings].sort((a,b) => b.createdAt - a.createdAt).map(b => {
+                const extras = getExtrasDisplay(b.selectedExtrasIds);
                 const waLink = getWhatsAppLink(b);
-                const packName = getPackName(b.packId);
-                const extras = getExtrasList(b.selectedExtrasIds);
-
                 return (
                   <tr key={b.id} className="border-b border-zinc-800/50 hover:bg-white/[0.02] transition-all">
                     <td className="p-6">
                       <div className="flex items-center gap-2">
-                          <div className="font-bold text-white uppercase">{b.customerName}</div>
-                          {waLink && (
-                              <a href={waLink} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-400" title="Confirmar Pago por WhatsApp">
-                                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
-                              </a>
-                          )}
+                        <div className="font-bold text-white uppercase">{b.customerName}</div>
+                        {waLink && (
+                           <a href={waLink} target="_blank" rel="noopener noreferrer" className="text-green-500 hover:text-green-400" title="Confirmar Pago">
+                              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+                           </a>
+                        )}
                       </div>
                       <div className="text-[8px] text-zinc-600 mt-1 font-black">{b.customerEmail}</div>
                     </td>
                     <td>
-                      <div className={`font-orbitron font-bold uppercase ${b.date === 'COMPRA_BONO' ? 'text-blue-500' : 'text-purple-500'}`}>{b.date === 'COMPRA_BONO' ? 'BONO' : b.date}</div>
-                      {b.date !== 'COMPRA_BONO' && (
-                         <div className="space-y-1 mt-1">
-                            <div className="text-[9px] text-zinc-500 font-black uppercase">{b.startTime}:00 ({b.duration}H)</div>
-                            <div className="text-[9px] text-zinc-300 font-bold uppercase bg-zinc-800 px-1.5 py-0.5 rounded w-fit">{packName}</div>
-                            {extras.length > 0 && (
-                                <div className="mt-2 flex flex-col gap-1">
-                                    {extras.map((ex, i) => (
-                                        <div key={i} className="text-[8px] text-pink-400 font-black uppercase tracking-wider flex items-center gap-1">
-                                            <span>•</span> {ex}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                         </div>
-                      )}
+                      <div className={`font-orbitron font-bold uppercase ${b.date === 'COMPRA_BONO' ? 'text-blue-500' : 'text-purple-500'}`}>{b.date}</div>
+                      {b.date !== 'COMPRA_BONO' && <div className="text-[9px] text-zinc-500 font-black uppercase">{b.startTime}:00 ({b.duration}H)</div>}
+                    </td>
+                    <td>
+                      {extras ? (
+                        <div className="flex flex-col gap-1">
+                          {extras.map((ex, i) => (
+                            <span key={i} className="inline-block bg-pink-500/10 border border-pink-500/20 text-pink-500 text-[8px] font-black uppercase px-2 py-0.5 rounded-md tracking-widest w-fit">+ {ex}</span>
+                          ))}
+                        </div>
+                      ) : <span className="text-zinc-800 text-[8px] font-black uppercase">Sin extras</span>}
                     </td>
                     <td className="font-orbitron font-bold text-white text-lg">{b.totalPrice}€</td>
                     <td><span className={`text-[8px] font-black uppercase px-2 py-1 rounded-md ${b.status === 'confirmed' ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'}`}>{b.status}</span></td>
                     <td className="p-6 text-right flex justify-end gap-2">
-                        {b.status === 'pending_verification' && <button onClick={() => handleConfirmBooking(b)} className="bg-green-600 text-white px-4 py-2 rounded-xl text-[8px] font-black uppercase shadow-lg hover:bg-green-500 transition-all">Validar</button>}
+                        {b.status === 'pending_verification' && <button onClick={() => handleConfirmBooking(b)} className="bg-green-600 text-white px-4 py-2 rounded-xl text-[8px] font-black uppercase shadow-lg hover:bg-green-500">Validar</button>}
                         <button onClick={() => handleDeleteBooking(b.id)} className="bg-zinc-800 text-zinc-500 px-4 py-2 rounded-xl text-[8px] font-black uppercase hover:bg-red-600 hover:text-white transition-all">Borrar</button>
                     </td>
                   </tr>
@@ -290,10 +311,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* MARKETING (BONOS Y CUPONES) */}
       {activeTab === 'marketing' && (
         <div className="grid md:grid-cols-2 gap-10">
           <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] shadow-2xl">
-            <h3 className="text-sm font-orbitron font-black uppercase text-white tracking-widest border-b border-zinc-800 pb-4 mb-6">Bonos Activos</h3>
+            <h3 className="text-sm font-orbitron font-black uppercase text-white tracking-widest border-b border-zinc-800 pb-4 mb-6">Bonos de Horas Activos</h3>
             <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
               {(homeContent.hourBonos || []).map(b => (
                 <div key={b.id} className="p-6 bg-black border border-zinc-800 rounded-[2rem] flex items-center justify-between group">
@@ -307,20 +329,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                 </div>
               ))}
-              {(homeContent.hourBonos || []).length === 0 && <p className="text-center py-20 text-[9px] font-black text-zinc-800 uppercase">Sin bonos activos</p>}
+              {(homeContent.hourBonos || []).length === 0 && <p className="text-center py-20 text-[9px] font-black text-zinc-800 uppercase">Sin bonos registrados</p>}
             </div>
           </section>
 
           <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] shadow-2xl">
             <div className="flex justify-between items-center border-b border-zinc-800 pb-4 mb-6">
-              <h3 className="text-sm font-orbitron font-black uppercase text-white tracking-widest">Cupones</h3>
-              <button onClick={() => handleUpdateHome({ coupons: [...(homeContent.coupons || []), { id: Math.random().toString(36).substr(2, 5), code: 'PROMO20', discountPercentage: 20, isActive: true }] })} className="bg-purple-600 px-5 py-2 rounded-xl text-[9px] font-black uppercase text-white shadow-xl">+ Crear</button>
+              <h3 className="text-sm font-orbitron font-black uppercase text-white tracking-widest">Cupones Descuento</h3>
+              <button onClick={() => handleUpdateHome({ coupons: [...(homeContent.coupons || []), { id: Math.random().toString(36).substr(2, 5), code: 'NUEVO', discountPercentage: 10, isActive: true }] })} className="bg-purple-600 px-5 py-2 rounded-xl text-[9px] font-black uppercase text-white shadow-xl">+ Crear</button>
             </div>
             <div className="space-y-4">
                {(homeContent.coupons || []).map(c => (
                  <div key={c.id} className="p-5 bg-black rounded-[2rem] flex gap-4 items-center border border-zinc-800">
                     <input value={c.code} onChange={e => handleUpdateHome({ coupons: homeContent.coupons.map(x => x.id === c.id ? {...x, code: e.target.value.toUpperCase()} : x) })} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-[11px] text-white font-black w-32 outline-none focus:border-purple-600" />
-                    <input type="number" value={c.discountPercentage} onChange={e => handleUpdateHome({ coupons: homeContent.coupons.map(x => x.id === c.id ? {...x, discountPercentage: Number(e.target.value)} : x) })} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[11px] text-purple-400 font-bold w-16" />
+                    <div className="flex items-center gap-1">
+                      <input type="number" value={c.discountPercentage} onChange={e => handleUpdateHome({ coupons: homeContent.coupons.map(x => x.id === c.id ? {...x, discountPercentage: Number(e.target.value)} : x) })} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-[11px] text-purple-400 font-bold w-16" />
+                      <span className="text-[10px] text-zinc-600 font-black">%</span>
+                    </div>
+                    <button onClick={() => handleUpdateHome({ coupons: homeContent.coupons.map(x => x.id === c.id ? {...x, isActive: !c.isActive} : x) })} className={`text-[8px] font-black uppercase px-3 py-2 rounded-lg ${c.isActive ? 'text-green-500' : 'text-red-500'}`}>{c.isActive ? 'ON' : 'OFF'}</button>
                     <button onClick={() => handleUpdateHome({ coupons: homeContent.coupons.filter(x => x.id !== c.id) })} className="text-zinc-700 hover:text-red-500 font-bold ml-auto transition-colors">✕</button>
                  </div>
                ))}
@@ -329,48 +355,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* INVENTARIO (PACKS Y EXTRAS) */}
       {activeTab === 'inventory' && (
         <div className="grid md:grid-cols-2 gap-10">
           <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[3rem] shadow-2xl">
              <div className="flex justify-between items-center border-b border-zinc-800 pb-4 mb-6">
-                <h3 className="text-sm font-orbitron font-black uppercase text-white tracking-widest">Configuración de Packs</h3>
-                <button onClick={() => onUpdatePacks([...packs, { id: Math.random().toString(36).substr(2, 5), name: 'Nuevo Pack', description: 'Uso del espacio...', pricePerHour: 20, features: [], icon: '🎧', isActive: true }])} className="text-[9px] font-black text-purple-600 uppercase tracking-widest">+ Añadir</button>
+                <h3 className="text-sm font-orbitron font-black uppercase text-white tracking-widest">Packs del Estudio</h3>
+                <button onClick={() => onUpdatePacks([...packs, { id: Math.random().toString(36).substr(2, 5), name: 'Nuevo Pack', description: '', pricePerHour: 20, features: [], icon: '🎧', isActive: true }])} className="text-[9px] font-black text-purple-600 uppercase">+ Añadir</button>
              </div>
-             <div className="space-y-8 max-h-[75vh] overflow-y-auto pr-3 scrollbar-thin">
+             <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2 scrollbar-thin">
                 {packs.map(p => (
-                  <div key={p.id} className="bg-black/40 border border-zinc-800 p-6 rounded-[2.5rem] space-y-5 group">
+                  <div key={p.id} className="bg-black/40 border border-zinc-800 p-6 rounded-[2.5rem] space-y-4">
                     <div className="flex items-center gap-4">
-                      <input value={p.icon} onChange={e => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, icon: e.target.value} : x))} className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl text-center outline-none" title="Emoji/Icono" />
-                      <input value={p.name} onChange={e => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, name: e.target.value} : x))} className="flex-1 bg-transparent text-white font-bold uppercase outline-none focus:border-purple-600" title="Nombre del Pack" />
-                      <button onClick={() => onUpdatePacks(packs.filter(x => x.id !== p.id))} className="text-zinc-800 hover:text-red-500 transition-colors">✕</button>
+                      <input value={p.icon} onChange={e => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, icon: e.target.value} : x))} className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl text-center shadow-inner" />
+                      <input value={p.name} onChange={e => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, name: e.target.value} : x))} className="flex-1 bg-transparent text-white font-bold uppercase outline-none focus:border-purple-600" />
+                      <button onClick={() => onUpdatePacks(packs.filter(x => x.id !== p.id))} className="text-zinc-800 hover:text-red-500">✕</button>
                     </div>
-                    
-                    <div className="space-y-2">
-                       <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest ml-1">Descripción (subtítulo)</label>
-                       <textarea 
-                         value={p.description} 
-                         onChange={e => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, description: e.target.value} : x))}
-                         className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[10px] text-zinc-400 h-16 outline-none focus:border-blue-600 shadow-inner resize-none"
-                         placeholder="Ej: Solo uso de sala..."
-                       />
-                    </div>
-
-                    <div className="space-y-2">
-                       <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest ml-1">Incluye (una característica por línea)</label>
-                       <textarea 
-                         value={p.features.join('\n')} 
-                         onChange={e => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, features: e.target.value.split('\n').filter(f => f.trim() !== '')} : x))}
-                         className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-[10px] text-white h-24 outline-none focus:border-purple-600 shadow-inner"
-                         placeholder="Insonorización&#10;Aire acondicionado..."
-                       />
-                    </div>
-
-                    <div className="flex items-center gap-4 pt-2">
-                       <div className="flex items-center gap-2">
-                        <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest">Precio/H</span>
-                        <input type="number" value={p.pricePerHour} onChange={e => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, pricePerHour: Number(e.target.value)} : x))} className="w-16 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-purple-400 font-bold" />
-                       </div>
-                       <button onClick={() => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, isActive: !p.isActive} : x))} className={`ml-auto px-5 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest ${p.isActive ? 'bg-green-600/10 text-green-500 border border-green-500/20' : 'bg-red-600/10 text-red-500 border border-red-500/20'}`}>{p.isActive ? 'Público' : 'Oculto'}</button>
+                    <textarea value={p.description} onChange={e => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, description: e.target.value} : x))} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-[10px] text-zinc-400 h-16 outline-none focus:border-purple-600 shadow-inner" placeholder="Descripción corta" />
+                    <div className="flex items-center gap-4">
+                       <input type="number" value={p.pricePerHour} onChange={e => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, pricePerHour: Number(e.target.value)} : x))} className="w-16 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-purple-400 font-bold shadow-inner" />
+                       <span className="text-zinc-700 text-[10px] font-black">€/H</span>
+                       <button onClick={() => onUpdatePacks(packs.map(x => x.id === p.id ? {...x, isActive: !p.isActive} : x))} className={`ml-auto px-5 py-2 rounded-xl text-[8px] font-black uppercase ${p.isActive ? 'bg-green-600/10 text-green-500 border border-green-500/20' : 'bg-red-600/10 text-red-500 border border-red-500/20'}`}>{p.isActive ? 'Público' : 'Oculto'}</button>
                     </div>
                   </div>
                 ))}
@@ -384,11 +389,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
              </div>
              <div className="grid grid-cols-2 gap-4">
                 {(homeContent.extras || []).map(e => (
-                  <div key={e.id} className="bg-black/40 border border-zinc-800 p-5 rounded-[2rem] relative group">
+                  <div key={e.id} className="bg-black/40 border border-zinc-800 p-5 rounded-[2rem] relative group shadow-inner">
                     <button onClick={() => handleUpdateHome({ extras: homeContent.extras.filter(x => x.id !== e.id) })} className="absolute top-4 right-4 text-zinc-800 hover:text-red-500">✕</button>
                     <input value={e.icon} onChange={v => handleUpdateHome({ extras: homeContent.extras.map(x => x.id === e.id ? {...x, icon: v.target.value} : x) })} className="w-10 h-10 bg-zinc-900 border border-zinc-800 rounded-xl text-center mb-2 mx-auto block outline-none" />
                     <input value={e.name} onChange={v => handleUpdateHome({ extras: homeContent.extras.map(x => x.id === e.id ? {...x, name: v.target.value} : x) })} className="bg-transparent text-center font-bold text-[9px] text-white uppercase w-full outline-none" />
-                    <div className="flex items-center gap-1 justify-center">
+                    <div className="flex items-center gap-1 justify-center mt-1">
                        <input type="number" value={e.price} onChange={v => handleUpdateHome({ extras: homeContent.extras.map(x => x.id === e.id ? {...x, price: Number(v.target.value)} : x) })} className="w-12 bg-zinc-900 border border-zinc-800 rounded text-center text-xs text-blue-400 font-bold" />
                        <span className="text-[9px] text-zinc-600 font-black">€</span>
                     </div>
@@ -411,29 +416,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 return (
                   <div key={dayKey} className="flex items-center gap-4 bg-black/40 border border-zinc-800 p-4 rounded-xl">
                     <div className="w-24 text-[10px] font-black uppercase text-zinc-500 tracking-widest">{esDays[dayKey]}</div>
-                    <button 
-                      onClick={() => {
+                    <button onClick={() => {
                         const newAv = { ...homeContent.availability };
                         (newAv as any)[dayKey].isOpen = !day.isOpen;
                         handleUpdateHome({ availability: newAv });
-                      }}
-                      className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase ${day.isOpen ? 'bg-green-600/10 text-green-500' : 'bg-red-600/10 text-red-500'}`}
-                    >
-                      {day.isOpen ? 'Abierto' : 'Cerrado'}
-                    </button>
+                      }} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase ${day.isOpen ? 'bg-green-600/10 text-green-500 shadow-[0_0_10px_rgba(34,197,94,0.2)]' : 'bg-red-600/10 text-red-500 shadow-[0_0_10px_rgba(239,68,68,0.2)]'}`}>{day.isOpen ? 'Abierto' : 'Cerrado'}</button>
                     {day.isOpen && (
                       <div className="flex items-center gap-2 ml-auto">
                         <input type="number" value={day.start} onChange={(e) => {
                            const newAv = { ...homeContent.availability };
                            (newAv as any)[dayKey].start = Number(e.target.value);
                            handleUpdateHome({ availability: newAv });
-                        }} className="w-12 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-white text-center" />
+                        }} className="w-12 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-white text-center shadow-inner" />
                         <span className="text-zinc-600">-</span>
                         <input type="number" value={day.end} onChange={(e) => {
                            const newAv = { ...homeContent.availability };
                            (newAv as any)[dayKey].end = Number(e.target.value);
                            handleUpdateHome({ availability: newAv });
-                        }} className="w-12 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-white text-center" />
+                        }} className="w-12 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-white text-center shadow-inner" />
                       </div>
                     )}
                   </div>
@@ -443,7 +443,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </section>
 
           <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl">
-            <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 mb-6 tracking-widest">Excepciones y Festivos</h3>
+            <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 mb-6 tracking-widest">Excepciones (Días Cerrados)</h3>
             <div className="mb-6 flex gap-2">
                <input type="date" id="newOverrideDate" className="bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-white text-xs outline-none focus:border-purple-600" />
                <button onClick={() => {
@@ -453,31 +453,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     handleUpdateHome({ availability: { ...homeContent.availability, overrides } });
                     input.value = '';
                   }
-               }} className="bg-purple-600 text-white px-4 rounded-xl text-[9px] font-black uppercase">Añadir Fecha</button>
+               }} className="bg-purple-600 text-white px-4 rounded-xl text-[9px] font-black uppercase shadow-xl">Añadir Fecha</button>
             </div>
             <div className="space-y-3">
               {homeContent.availability.overrides.map(ov => (
                 <div key={ov.id} className="flex items-center justify-between bg-black/40 border border-zinc-800 p-4 rounded-xl">
-                   <div>
-                     <div className="text-white font-bold text-xs">{ov.date}</div>
-                     <div className="text-[9px] text-red-500 font-black uppercase mt-1">{ov.isOpen ? 'Horario Especial' : 'Cerrado Todo el Día'}</div>
-                   </div>
-                   <button onClick={() => {
-                      const overrides = homeContent.availability.overrides.filter(x => x.id !== ov.id);
-                      handleUpdateHome({ availability: { ...homeContent.availability, overrides } });
-                   }} className="text-zinc-600 hover:text-red-500">✕</button>
+                   <div className="text-white font-bold text-xs uppercase">{ov.date} - <span className="text-red-500">Cerrado</span></div>
+                   <button onClick={() => handleUpdateHome({ availability: { ...homeContent.availability, overrides: homeContent.availability.overrides.filter(x => x.id !== ov.id) } })} className="text-zinc-600 hover:text-red-500">✕</button>
                 </div>
               ))}
-              {homeContent.availability.overrides.length === 0 && <p className="text-zinc-700 text-[9px] uppercase font-black text-center py-10">No hay excepciones configuradas</p>}
+              {homeContent.availability.overrides.length === 0 && <p className="text-zinc-700 text-[9px] font-black uppercase text-center py-10">Sin excepciones registradas</p>}
             </div>
           </section>
         </div>
       )}
 
-      {/* DISEÑO HOME */}
+      {/* CONTENIDOS HOME */}
       {activeTab === 'home' && (
         <div className="bg-zinc-900 border border-zinc-800 p-12 rounded-[3.5rem] shadow-2xl space-y-12">
-           <h3 className="text-xl font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-6 tracking-widest">Edición de Contenidos</h3>
+           <h3 className="text-xl font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-6 tracking-widest">Edición de Contenidos Home</h3>
            <div className="grid lg:grid-cols-2 gap-16">
               <div className="space-y-8">
                  <div className="space-y-4">
@@ -488,75 +482,92 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <label className="text-[8px] font-black text-zinc-600 uppercase ml-2 tracking-widest">Subtítulo (Hero)</label>
                     <textarea value={homeContent.heroSubtitle} onChange={e => handleUpdateHome({ heroSubtitle: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-2xl p-6 text-sm text-zinc-400 h-24 outline-none focus:border-purple-600 shadow-inner" />
                  </div>
-                 <div className="space-y-4 p-8 bg-black/40 border border-blue-900/20 rounded-[2.5rem]">
-                    <h4 className="text-[9px] font-black text-blue-500 uppercase tracking-[0.2em] mb-4">Sección Banner Informativo</h4>
-                    <div className="space-y-4">
-                      <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest ml-2">Título Banner</label>
-                      <input value={homeContent.bannerTitle} onChange={e => handleUpdateHome({ bannerTitle: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-4 text-xs font-bold text-white outline-none focus:border-blue-600 shadow-inner" />
-                      
-                      <label className="text-[8px] font-black text-zinc-600 uppercase tracking-widest ml-2">Descripción Banner</label>
-                      <textarea value={homeContent.studioDescription} onChange={e => handleUpdateHome({ studioDescription: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-6 text-xs text-zinc-400 h-40 outline-none focus:border-blue-600 shadow-inner" />
-                    </div>
-                 </div>
               </div>
               <div className="space-y-8">
                  <div className="space-y-4">
-                    <label className="text-[8px] font-black text-zinc-600 uppercase ml-2 tracking-widest">Imagen de Fondo (Hero URL)</label>
-                    <input value={homeContent.heroImageUrl} onChange={e => handleUpdateHome({ heroImageUrl: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl px-5 py-4 text-[10px] text-blue-500 font-mono shadow-inner outline-none" />
-                    <div className="w-full h-32 rounded-2xl overflow-hidden border border-zinc-800 mt-2">
-                      <img src={homeContent.heroImageUrl} className="w-full h-full object-cover opacity-50" alt="Preview" />
-                    </div>
+                    <label className="text-[8px] font-black text-zinc-600 uppercase ml-2 tracking-widest">Banner Informativo</label>
+                    <input value={homeContent.bannerTitle} onChange={e => handleUpdateHome({ bannerTitle: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl px-5 py-4 text-xs font-bold text-white mb-2" />
+                    <textarea value={homeContent.studioDescription} onChange={e => handleUpdateHome({ studioDescription: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-2xl p-6 text-xs text-zinc-400 h-40 outline-none focus:border-blue-600 shadow-inner" />
                  </div>
                  <div className="space-y-4">
                     <label className="text-[8px] font-black text-zinc-600 uppercase ml-2 tracking-widest">Textos de Pie (Footer)</label>
-                    <input value={homeContent.footerText} onChange={e => handleUpdateHome({ footerText: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl px-5 py-4 text-[10px] text-white outline-none mb-2" placeholder="Dirección / Contacto" />
-                    <textarea value={homeContent.footerSecondaryText} onChange={e => handleUpdateHome({ footerSecondaryText: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-[10px] text-zinc-500 h-24 outline-none resize-none" placeholder="Legal / Derechos" />
+                    <input value={homeContent.footerText} onChange={e => handleUpdateHome({ footerText: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl px-5 py-4 text-[10px] text-white outline-none mb-2" />
+                    <textarea value={homeContent.footerSecondaryText} onChange={e => handleUpdateHome({ footerSecondaryText: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl p-4 text-[10px] text-zinc-500 h-24 outline-none shadow-inner" />
                  </div>
               </div>
            </div>
         </div>
       )}
 
+      {/* CONFIGURACIÓN Y PAGOS */}
       {activeTab === 'config' && (
         <div className="space-y-10">
           <div className="grid lg:grid-cols-2 gap-8">
             <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl space-y-6">
-               <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 tracking-widest">Métodos de Pago</h3>
+               <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 tracking-widest">Métodos de Pago Activos</h3>
                <div className="space-y-5">
+                  {/* BIZUM */}
                   <div className="p-5 bg-black/40 rounded-2xl border border-zinc-800 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Bizum & WhatsApp Contact</span>
-                      <button onClick={() => handleUpdateHome({ payments: { ...homeContent.payments, bizumEnabled: !homeContent.payments.bizumEnabled } })} className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase ${homeContent.payments.bizumEnabled ? 'bg-blue-600 text-white shadow-lg' : 'bg-zinc-800 text-zinc-500'}`}>{homeContent.payments.bizumEnabled ? 'Activo' : 'Inactivo'}</button>
+                       <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Bizum & WhatsApp</span>
+                       <button onClick={() => handleUpdateHome({ payments: { ...homeContent.payments, bizumEnabled: !homeContent.payments.bizumEnabled } })} className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase ${homeContent.payments.bizumEnabled ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>{homeContent.payments.bizumEnabled ? 'Activo' : 'Inactivo'}</button>
                     </div>
-                    <input value={homeContent.payments.bizumPhone} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, bizumPhone: e.target.value } })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-blue-600" placeholder="Teléfono (también para recibir reservas WhatsApp)" />
-                    <p className="text-[8px] text-zinc-600 italic">Este número recibirá los mensajes de confirmación de reserva.</p>
+                    <input value={homeContent.payments.bizumPhone} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, bizumPhone: e.target.value } })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-blue-600 shadow-inner" placeholder="Teléfono para Bizum" />
                   </div>
+
+                  {/* REVOLUT */}
                   <div className="p-5 bg-black/40 rounded-2xl border border-zinc-800 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Revolut</span>
-                      <button onClick={() => handleUpdateHome({ payments: { ...homeContent.payments, revolutEnabled: !homeContent.payments.revolutEnabled } })} className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase ${homeContent.payments.revolutEnabled ? 'bg-purple-600 text-white shadow-lg' : 'bg-zinc-800 text-zinc-500'}`}>{homeContent.payments.revolutEnabled ? 'Activo' : 'Inactivo'}</button>
+                       <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Revolut Business</span>
+                       <button onClick={() => handleUpdateHome({ payments: { ...homeContent.payments, revolutEnabled: !homeContent.payments.revolutEnabled } })} className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase ${homeContent.payments.revolutEnabled ? 'bg-purple-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>{homeContent.payments.revolutEnabled ? 'Activo' : 'Inactivo'}</button>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                        <input value={homeContent.payments.revolutTag} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, revolutTag: e.target.value } })} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-purple-600" placeholder="@usuario (Tag)" />
-                        <input value={homeContent.payments.revolutLink} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, revolutLink: e.target.value } })} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-blue-400 font-mono outline-none focus:border-blue-600" placeholder="https://revolut.me/..." />
+                      <input value={homeContent.payments.revolutTag} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, revolutTag: e.target.value } })} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-white outline-none" placeholder="@revolut_tag" />
+                      <input value={homeContent.payments.revolutLink} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, revolutLink: e.target.value } })} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-xs text-blue-400 font-mono outline-none" placeholder="https://revolut.me/..." />
                     </div>
                   </div>
+
+                  {/* MOLLIE (TARJETA) */}
                   <div className="p-5 bg-black/40 rounded-2xl border border-zinc-800 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Tarjeta (Mollie)</span>
-                      <button onClick={() => handleUpdateHome({ payments: { ...homeContent.payments, mollieEnabled: !homeContent.payments.mollieEnabled } })} className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase ${homeContent.payments.mollieEnabled ? 'bg-amber-600 text-white shadow-lg' : 'bg-zinc-800 text-zinc-500'}`}>{homeContent.payments.mollieEnabled ? 'Activo' : 'Inactivo'}</button>
+                       <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Tarjeta (Mollie API)</span>
+                       <button onClick={() => handleUpdateHome({ payments: { ...homeContent.payments, mollieEnabled: !homeContent.payments.mollieEnabled } })} className={`px-4 py-1.5 rounded-lg text-[8px] font-black uppercase ${homeContent.payments.mollieEnabled ? 'bg-amber-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>{homeContent.payments.mollieEnabled ? 'Activo' : 'Inactivo'}</button>
                     </div>
-                    <input value={homeContent.payments.mollieApiKey} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, mollieApiKey: e.target.value } })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-[9px] text-amber-500 font-mono outline-none focus:border-amber-600" placeholder="live_xxxxxxxxxxxxxxxxxxxxxxxxxx" type="password" />
+                    <input type="password" value={homeContent.payments.mollieApiKey} onChange={e => handleUpdateHome({ payments: { ...homeContent.payments, mollieApiKey: e.target.value } })} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-[9px] text-amber-500 font-mono outline-none shadow-inner" placeholder="live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
                   </div>
                </div>
             </section>
 
             <section className="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl space-y-6">
-               <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 tracking-widest">Sincronización Cloud</h3>
+               <h3 className="text-sm font-orbitron font-black uppercase text-white border-b border-zinc-800 pb-4 tracking-widest">Sincronización Cloud (API)</h3>
                <div className="flex flex-col gap-4">
-                <input value={homeContent.apiUrl} onChange={e => handleUpdateHome({ apiUrl: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl px-6 py-4 text-[10px] text-blue-500 font-mono tracking-widest" placeholder="https://..." />
-                <button onClick={onPushToCloud} className="w-full bg-white text-black py-4 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-purple-600 hover:text-white transition-all shadow-xl">Empujar Datos</button>
+                <input value={homeContent.apiUrl} onChange={e => handleUpdateHome({ apiUrl: e.target.value })} className="w-full bg-black border border-zinc-800 rounded-xl px-6 py-4 text-[10px] text-blue-500 font-mono tracking-widest shadow-inner" placeholder="https://mi-api-render.com" />
+                <div className="grid grid-cols-2 gap-4">
+                   <button onClick={onForceSync} className="bg-zinc-800 text-white py-4 rounded-xl font-black uppercase text-[9px] tracking-widest hover:bg-zinc-700 transition-all">Refrescar</button>
+                   <button onClick={onPushToCloud} className="bg-white text-black py-4 rounded-xl font-black uppercase text-[9px] tracking-widest hover:bg-purple-600 hover:text-white transition-all shadow-xl">Empujar Datos</button>
+                </div>
                </div>
+               <p className="text-[8px] text-zinc-600 italic leading-relaxed uppercase tracking-wider">Asegúrate de que la URL de la API es correcta para evitar el modo local permanente.</p>
+            </section>
+
+            {/* EMAIL CONFIG (RESEND) */}
+            <section className="col-span-1 lg:col-span-2 bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl space-y-6">
+                <div className="flex justify-between items-center border-b border-zinc-800 pb-4">
+                    <h3 className="text-sm font-orbitron font-black uppercase text-white tracking-widest">Notificaciones (Resend)</h3>
+                </div>
+                <div className="flex flex-col gap-4">
+                    <p className="text-[10px] text-zinc-400 font-medium leading-relaxed">
+                        El servidor utiliza la librería <strong>Resend</strong> para enviar confirmaciones de reserva. 
+                        Asegúrate de haber configurado la variable de entorno <code>RESEND_API_KEY</code> en tu panel de hosting (Render/Vercel).
+                    </p>
+                    <button 
+                        id="btn-test-email"
+                        onClick={handleTestEmail}
+                        className="w-full bg-white text-black py-4 rounded-xl font-black uppercase text-[11px] tracking-widest hover:bg-zinc-200 transition-all shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Enviar Email de Prueba
+                    </button>
+                </div>
             </section>
           </div>
         </div>
