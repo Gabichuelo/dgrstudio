@@ -237,6 +237,19 @@ const BookingView: React.FC<BookingViewProps> = ({ packs, bookings, homeContent,
 
     // Para métodos manuales
     onSubmit(newBooking);
+    
+    // ENVIAR EMAIL DE NOTIFICACIÓN (RESEND) - MÉTODOS MANUALES
+    const apiUrl = homeContent.apiUrl || 'https://estudio-dj-api-2.onrender.com';
+    fetch(`${apiUrl.replace(/\/$/, '')}/api/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            cliente: newBooking.customerName,
+            servicio: bookingMode === 'bono' ? 'Compra de Bono (Manual)' : `Reserva ${selectedPack.name} (Manual)`,
+            fecha: newBooking.date
+        })
+    }).catch(console.error);
+
     setLastBooking(newBooking);
     setLastPaymentMethod(method);
     setPaymentStatus('success');
